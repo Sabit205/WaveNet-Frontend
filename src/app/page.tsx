@@ -27,7 +27,7 @@ export default function Home() {
 
   useEffect(() => {
     socket.on("online-users", (users: OnlineUser[]) => {
-      setOnlineUsers(users.filter(u => u.userId !== user?.id));
+      setOnlineUsers(users.filter(u => u.userId !== user?.id && u.userInfo && u.userInfo.name));
     });
 
     return () => {
