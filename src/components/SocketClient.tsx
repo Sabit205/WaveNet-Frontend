@@ -124,7 +124,19 @@ export function SocketClient() {
         if (!caller) return;
 
         setCallStatus("active");
-        createPeerConnection();
+
+        // Define callback here or reuse if possible. 
+        // Since handleIceCandidate is defined inside the component but not in this scope easily without refactoring,
+        // we can redefine it or move it out. 
+        // Better to move handleIceCandidate to component scope.
+        const onIceCandidate = (candidate: RTCIceCandidate) => {
+            const { remoteUserId } = useCallStore.getState();
+            if (remoteUserId) {
+                socket.emit('signal', { targetId: remoteUserId, signal: { candidate } });
+            }
+        };
+
+        createPeerConnection(onIceCandidate);
         const stream = await startLocalStream(callType || 'audio');
 
         socket.emit("call-accepted", { callerId: caller.id });

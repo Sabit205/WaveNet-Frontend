@@ -6,7 +6,7 @@ import { useUser } from '@clerk/nextjs';
 
 interface WebRTCContextType {
     peerConnection: React.MutableRefObject<RTCPeerConnection | null>;
-    createPeerConnection: () => void;
+    createPeerConnection: (onIceCandidate: (candidate: RTCIceCandidate) => void) => void;
     startLocalStream: (type: 'audio' | 'video') => Promise<MediaStream | undefined>;
     endCall: () => void;
     toggleAudio: (enabled: boolean) => void;
@@ -25,7 +25,6 @@ const STUN_SERVERS = {
 export const WebRTCProvider = ({ children }: { children: React.ReactNode }) => {
     const { user } = useUser();
     const {
-        callStatus,
         setLocalStream,
         setRemoteStream,
         resetCall
@@ -34,43 +33,61 @@ export const WebRTCProvider = ({ children }: { children: React.ReactNode }) => {
     const peerConnection = useRef<RTCPeerConnection | null>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
 
-    const createPeerConnection = useCallback(() => {
+    const createPeerConnection = useCallback((onIceCandidate: (candidate: RTCIceCandidate) => void) => {
         if (peerConnection.current) return;
 
         peerConnection.current = new RTCPeerConnection(STUN_SERVERS);
 
         peerConnection.current.onicecandidate = (event) => {
-            // Handled in SocketClient via the ref
+            if (event.candidate) {
+                onIceCandidate(event.candidate);
+            }
         };
 
         peerConnection.current.ontrack = (event) => {
             console.log("Received remote track", event.streams[0]);
-            // Create a new MediaStream object to ensure state updates trigger re-renders
-            // even if the underlying stream ID is the same.
             if (event.streams && event.streams[0]) {
                 setRemoteStream(event.streams[0]);
             } else {
-                // Fallback if no stream is associated (shouldn't happen with addTrack)
                 const newStream = new MediaStream();
                 newStream.addTrack(event.track);
                 setRemoteStream(newStream);
+            }
+        };
+
+        peerConnection.current.onconnectionstatechange = () => {
+            console.log("Connection state:", peerConnection.current?.connectionState);
+            if (peerConnection.current?.connectionState === "failed" || peerConnection.current?.connectionState === "disconnected") {
+                endCall();
             }
         };
     }, [setRemoteStream]);
 
     const startLocalStream = useCallback(async (type: 'audio' | 'video') => {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                audio: true,
+            const constraints = {
+                audio: true, // Always request audio for now to ensure mic works, can toggle off later
                 video: type === 'video'
-            });
+            };
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
             localStreamRef.current = stream;
             setLocalStream(stream);
 
-            // Add tracks to peer connection
             if (peerConnection.current) {
-                console.log("Adding local tracks to PeerConnection");
+                // Remove old tracks
+                const senders = peerConnection.current.getSenders();
+                senders.forEach(sender => {
+                    if (sender.track) {
+                        // Don't remove here blindly, might break negotiation. 
+                        // Better to replaceTrack if possible, or remove and add.
+                        // For simplicity in this app, we'll remove all and re-add.
+                        peerConnection.current?.removeTrack(sender);
+                    }
+                });
+
+                // Add new tracks
                 stream.getTracks().forEach(track => {
                     peerConnection.current?.addTrack(track, stream);
                 });
