@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Phone, Video } from "lucide-react";
@@ -20,6 +20,9 @@ export function CallModal({ onAccept, onReject }: CallModalProps) {
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                     <DialogTitle className="text-center">Incoming {callType} Call</DialogTitle>
+                    <DialogDescription className="text-center">
+                        Incoming call from {caller.name}
+                    </DialogDescription>
                 </DialogHeader>
                 <div className="flex flex-col items-center space-y-4 py-4">
                     <Avatar className="h-24 w-24">
