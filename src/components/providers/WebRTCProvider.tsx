@@ -9,6 +9,8 @@ interface WebRTCContextType {
     createPeerConnection: () => void;
     startLocalStream: (type: 'audio' | 'video') => Promise<MediaStream | undefined>;
     endCall: () => void;
+    toggleAudio: (enabled: boolean) => void;
+    toggleVideo: (enabled: boolean) => void;
 }
 
 const WebRTCContext = createContext<WebRTCContextType | null>(null);
@@ -80,8 +82,20 @@ export const WebRTCProvider = ({ children }: { children: React.ReactNode }) => {
         resetCall();
     }, [resetCall]);
 
+    const toggleAudio = useCallback((enabled: boolean) => {
+        if (localStreamRef.current) {
+            localStreamRef.current.getAudioTracks().forEach(track => track.enabled = enabled);
+        }
+    }, []);
+
+    const toggleVideo = useCallback((enabled: boolean) => {
+        if (localStreamRef.current) {
+            localStreamRef.current.getVideoTracks().forEach(track => track.enabled = enabled);
+        }
+    }, []);
+
     return (
-        <WebRTCContext.Provider value={{ peerConnection, createPeerConnection, startLocalStream, endCall }}>
+        <WebRTCContext.Provider value={{ peerConnection, createPeerConnection, startLocalStream, endCall, toggleAudio, toggleVideo }}>
             {children}
         </WebRTCContext.Provider>
     );

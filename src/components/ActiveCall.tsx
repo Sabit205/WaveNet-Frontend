@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCallStore } from '@/store/useCallStore';
+import { useWebRTC } from '@/components/providers/WebRTCProvider';
 import { Button } from "@/components/ui/button";
 import { PhoneOff, Mic, MicOff, Video, VideoOff } from "lucide-react";
 
@@ -9,8 +10,11 @@ interface ActiveCallProps {
 
 export function ActiveCall({ onEndCall }: ActiveCallProps) {
     const { localStream, remoteStream, callType } = useCallStore();
+    const { toggleAudio, toggleVideo } = useWebRTC();
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
+    const [isMicOn, setIsMicOn] = useState(true);
+    const [isCameraOn, setIsCameraOn] = useState(callType === 'video');
 
     useEffect(() => {
         if (localVideoRef.current && localStream) {
@@ -23,6 +27,18 @@ export function ActiveCall({ onEndCall }: ActiveCallProps) {
             remoteVideoRef.current.srcObject = remoteStream;
         }
     }, [remoteStream]);
+
+    const handleToggleMic = () => {
+        const newState = !isMicOn;
+        setIsMicOn(newState);
+        toggleAudio(newState);
+    };
+
+    const handleToggleCamera = () => {
+        const newState = !isCameraOn;
+        setIsCameraOn(newState);
+        toggleVideo(newState);
+    };
 
     return (
         <div className="fixed inset-0 bg-black z-50 flex flex-col">
@@ -42,7 +58,7 @@ export function ActiveCall({ onEndCall }: ActiveCallProps) {
                 )}
 
                 {/* Local Video (PiP) */}
-                {callType === 'video' && (
+                {callType === 'video' && isCameraOn && (
                     <div className="absolute bottom-24 right-4 w-32 h-48 bg-gray-900 rounded-lg overflow-hidden shadow-lg border border-gray-800">
                         <video
                             ref={localVideoRef}
@@ -57,8 +73,13 @@ export function ActiveCall({ onEndCall }: ActiveCallProps) {
 
             {/* Controls */}
             <div className="h-20 bg-gray-900/90 flex items-center justify-center gap-6">
-                <Button variant="secondary" size="icon" className="rounded-full h-12 w-12">
-                    <Mic className="h-5 w-5" />
+                <Button
+                    variant={isMicOn ? "secondary" : "destructive"}
+                    size="icon"
+                    className="rounded-full h-12 w-12"
+                    onClick={handleToggleMic}
+                >
+                    {isMicOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
                 </Button>
 
                 <Button
@@ -71,8 +92,13 @@ export function ActiveCall({ onEndCall }: ActiveCallProps) {
                 </Button>
 
                 {callType === 'video' && (
-                    <Button variant="secondary" size="icon" className="rounded-full h-12 w-12">
-                        <Video className="h-5 w-5" />
+                    <Button
+                        variant={isCameraOn ? "secondary" : "destructive"}
+                        size="icon"
+                        className="rounded-full h-12 w-12"
+                        onClick={handleToggleCamera}
+                    >
+                        {isCameraOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
                     </Button>
                 )}
             </div>
