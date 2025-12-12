@@ -22,8 +22,24 @@ export function SocketClient() {
     useEffect(() => {
         if (!user) return;
 
-        socket.connect();
-        socket.emit("user-online", user.id);
+        const handleConnect = () => {
+            socket.emit("user-online", {
+                userId: user.id,
+                userInfo: {
+                    name: user.fullName,
+                    avatar: user.imageUrl
+                }
+            });
+        };
+
+        socket.on('connect', handleConnect);
+
+        // If already connected, emit immediately
+        if (socket.connected) {
+            handleConnect();
+        } else {
+            socket.connect();
+        }
 
         socket.on("incoming-call", ({ callerId, callerName, callerAvatar, callType }) => {
             setCallStatus("incoming");
