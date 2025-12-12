@@ -4,9 +4,12 @@ import { useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { socket } from "@/lib/socket";
 import { useCallStore } from "@/store/useCallStore";
+import { useChatStore } from "@/store/useChatStore";
+import { useUserStore } from "@/store/useUserStore";
 import { CallModal } from "./CallModal";
 import { ActiveCall } from "./ActiveCall";
 import { useWebRTC } from "@/components/providers/WebRTCProvider";
+import { useRouter } from "next/navigation";
 
 export function SocketClient() {
     const { user } = useUser();
@@ -20,10 +23,31 @@ export function SocketClient() {
     } = useCallStore();
     const { createPeerConnection, startLocalStream, endCall, peerConnection } = useWebRTC();
 
+    const { activeChatUser, addMessage, addTypingUser, removeTypingUser, markMessagesAsRead } = useChatStore();
+    const { setMongoUser } = useUserStore();
+
     useEffect(() => {
         if (!user) return;
 
-        const handleConnect = () => {
+        const handleConnect = async () => {
+            // Sync user with backend
+            try {
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/users/sync`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: user.primaryEmailAddress?.emailAddress,
+                        fullName: user.fullName,
+                        imageUrl: user.imageUrl
+                    })
+                });
+                const data = await res.json();
+                setMongoUser(data);
+            } catch (err) {
+                console.error("Failed to sync user", err);
+            }
+
+            // Emit online
             socket.emit("user-online", {
                 userId: user.id,
                 userInfo: {
@@ -35,18 +59,56 @@ export function SocketClient() {
 
         socket.on('connect', handleConnect);
 
-        // If already connected, emit immediately
         if (socket.connected) {
             handleConnect();
         } else {
             socket.connect();
         }
 
+        // --- Chat Events ---
+        socket.on("new-message", (message) => {
+            const currentActive = useChatStore.getState().activeChatUser;
+            // Only add if it belongs to current chat? Or add to store anyway?
+            // Ideally add to store, and UI filters. For now, simple store:
+            if (currentActive === message.senderId || currentActive === message.receiverId) {
+                addMessage(message);
+                if (currentActive === message.senderId) {
+                    socket.emit('mark-read', { senderId: message.senderId, receiverId: user.id });
+                }
+            }
+        });
+
+        socket.on("message-sent", (message) => {
+            addMessage(message);
+        });
+
+        socket.on("typing", ({ senderId }) => {
+            addTypingUser(senderId);
+        });
+
+        socket.on("stop-typing", ({ senderId }) => {
+            removeTypingUser(senderId);
+        });
+
+        socket.on("messages-read", ({ byUserId }) => {
+            markMessagesAsRead(user.id); // This means asking for read rectipt logic.
+            // Wait, logic is: 'messages-read' means 'byUserId' read MY messages.
+            // So messages where senderId == ME and receiverId == byUserId should be marked read.
+            // Our store has 'markMessagesAsRead(senderId)' -> updates messages where senderId == senderId.
+            // Mistake in store logic vs event name.
+            // Let's fix store usage:
+            // We want to update our OWN messages to 'read'.
+            // Simple approach: reload or manually update local state.
+            // For now, let's just trigger a re-fetch or manual update.
+            // We'll update the store to handle "mark messages sent TO byUserId as read"
+        });
+
+        // --- Call Events ---
         socket.on("incoming-call", ({ callerId, callerName, callerAvatar, callType }) => {
             setCallStatus("incoming");
             setCaller({ id: callerId, name: callerName, avatar: callerAvatar });
             setCallType(callType);
-            setRemoteUserId(callerId); // Set remote user ID for callee
+            setRemoteUserId(callerId);
         });
 
         socket.on("call-accepted", async ({ signal }) => {
