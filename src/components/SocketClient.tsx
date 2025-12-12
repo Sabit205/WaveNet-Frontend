@@ -46,6 +46,7 @@ export function SocketClient() {
             setCallStatus("incoming");
             setCaller({ id: callerId, name: callerName, avatar: callerAvatar });
             setCallType(callType);
+            setRemoteUserId(callerId); // IMPORTANT: Set remote user ID for callee
         });
 
         socket.on("call-accepted", async ({ signal }) => {
@@ -75,6 +76,7 @@ export function SocketClient() {
             if (!peerConnection.current) createPeerConnection();
 
             if (signal.type === 'offer') {
+                setRemoteUserId(senderId); // Ensure we know who sent the offer
                 await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(signal));
                 const answer = await peerConnection.current?.createAnswer();
                 await peerConnection.current?.setLocalDescription(answer);
@@ -94,19 +96,17 @@ export function SocketClient() {
             socket.off("signal");
             socket.disconnect();
         };
-    }, [user, setCallStatus, setCaller, setCallType, resetCall, endCall, createPeerConnection, peerConnection]);
+    }, [user, setCallStatus, setCaller, setCallType, resetCall, endCall, createPeerConnection, peerConnection, setRemoteUserId]);
 
     // Handle Ice Candidates emission
     useEffect(() => {
         if (peerConnection.current) {
             peerConnection.current.onicecandidate = (event) => {
                 if (event.candidate) {
-                    // We need to know who we are talking to. 
-                    // For now, let's assume we store the 'otherUserId' in the store.
-                    // This is a missing piece in the store.
-                    // Let's assume we broadcast or have a way to know.
-                    // For simplicity in this step, I'll skip the exact targetId logic here 
-                    // but it should be in the store as 'remoteUserId'.
+                    const { remoteUserId } = useCallStore.getState();
+                    if (remoteUserId) {
+                        socket.emit('signal', { targetId: remoteUserId, signal: { candidate: event.candidate } });
+                    }
                 }
             };
         }
@@ -121,17 +121,6 @@ export function SocketClient() {
         createPeerConnection();
         const stream = await startLocalStream(callType || 'audio');
 
-        // Create Answer (Wait for offer? Actually usually caller sends offer first. 
-        // But in this flow, we just accepted. Caller should have sent offer? 
-        // Or we initiate WebRTC now?
-        // Let's assume Caller creates Offer upon "call-accepted" or immediately.
-        // Simplest: Caller creates offer immediately when calling? No, wait for accept.
-        // Flow: 
-        // 1. A calls B (Socket)
-        // 2. B accepts (Socket) -> A receives 'call-accepted'
-        // 3. A creates Offer -> sends to B
-        // 4. B receives Offer -> sends Answer
-
         socket.emit("call-accepted", { callerId: caller.id });
     };
 
@@ -144,12 +133,13 @@ export function SocketClient() {
     };
 
     const handleEndCall = () => {
-        const { caller } = useCallStore.getState(); // We need to know who the other person is.
-        // If we are caller, we have receiverId. If we are receiver, we have callerId.
-        // Store needs 'remoteUserId'.
-        // For now, just emit end-call and let backend handle or broadcast.
-        // Actually backend needs targetId.
-        // I'll update store to have 'remoteUserId'.
+        // We rely on the store state or just emit end-call. 
+        // Ideally we should pass the targetId, but the backend can look it up or we use remoteUserId.
+        // The store has remoteUserId.
+        const { remoteUserId, callType } = useCallStore.getState();
+        if (remoteUserId) {
+            socket.emit("end-call", { receiverId: remoteUserId, callType });
+        }
         endCall();
     };
 
