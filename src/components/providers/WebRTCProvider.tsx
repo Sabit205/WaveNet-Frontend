@@ -61,9 +61,12 @@ export const WebRTCProvider = ({ children }: { children: React.ReactNode }) => {
 
             // Add tracks to peer connection
             if (peerConnection.current) {
+                console.log("Adding local tracks to PeerConnection");
                 stream.getTracks().forEach(track => {
                     peerConnection.current?.addTrack(track, stream);
                 });
+            } else {
+                console.warn("PeerConnection not initialized when starting local stream");
             }
             return stream;
         } catch (err) {
