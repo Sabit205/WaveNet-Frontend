@@ -15,6 +15,7 @@ export function SocketClient() {
         setCallStatus,
         setCaller,
         setCallType,
+        setRemoteUserId,
         resetCall
     } = useCallStore();
     const { createPeerConnection, startLocalStream, endCall, peerConnection } = useWebRTC();
