@@ -11,15 +11,23 @@ import { useCallStore } from "@/store/useCallStore";
 import { useWebRTC } from "@/components/providers/WebRTCProvider";
 import Link from "next/link";
 
+interface OnlineUser {
+  userId: string;
+  userInfo: {
+    name: string;
+    avatar: string;
+  };
+}
+
 export default function Home() {
   const { user } = useUser();
-  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const { setCallStatus, setCallType, setRemoteUserId } = useCallStore();
   const { createPeerConnection, startLocalStream } = useWebRTC();
 
   useEffect(() => {
-    socket.on("online-users", (users: string[]) => {
-      setOnlineUsers(users.filter(id => id !== user?.id));
+    socket.on("online-users", (users: OnlineUser[]) => {
+      setOnlineUsers(users.filter(u => u.userId !== user?.id));
     });
 
     return () => {
@@ -59,23 +67,24 @@ export default function Home() {
         {onlineUsers.length === 0 ? (
           <p className="text-muted-foreground">No other users online.</p>
         ) : (
-          onlineUsers.map((userId) => (
-            <Card key={userId}>
+          onlineUsers.map((u) => (
+            <Card key={u.userId}>
               <CardContent className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">
                   <div className="relative">
                     <Avatar>
-                      <AvatarFallback>U</AvatarFallback>
+                      <AvatarImage src={u.userInfo?.avatar} />
+                      <AvatarFallback>{u.userInfo?.name?.[0] || 'U'}</AvatarFallback>
                     </Avatar>
                     <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></span>
                   </div>
-                  <span className="font-medium truncate max-w-[150px]">{userId}</span>
+                  <span className="font-medium truncate max-w-[150px]">{u.userInfo?.name || u.userId}</span>
                 </div>
                 <div className="flex gap-2">
-                  <Button size="icon" variant="ghost" onClick={() => startCall(userId, 'audio')}>
+                  <Button size="icon" variant="ghost" onClick={() => startCall(u.userId, 'audio')}>
                     <Phone className="h-5 w-5" />
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => startCall(userId, 'video')}>
+                  <Button size="icon" variant="ghost" onClick={() => startCall(u.userId, 'video')}>
                     <Video className="h-5 w-5" />
                   </Button>
                 </div>
