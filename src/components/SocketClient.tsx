@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/nextjs";
 import { socket } from "@/lib/socket";
 import { useCallStore } from "@/store/useCallStore";
 import { useChatStore } from "@/store/useChatStore";
@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 
 export function SocketClient() {
     const { user } = useUser();
+    const { getToken } = useAuth();
     const {
         callStatus,
         setCallStatus,
@@ -32,15 +33,20 @@ export function SocketClient() {
         const handleConnect = async () => {
             // Sync user with backend
             try {
+                const token = await getToken();
                 const res = await fetch(`${process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000'}/api/users/sync`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: JSON.stringify({
                         email: user.primaryEmailAddress?.emailAddress,
                         fullName: user.fullName,
                         imageUrl: user.imageUrl
                     })
                 });
+                if (!res.ok) throw new Error("Sync failed");
                 const data = await res.json();
                 setMongoUser(data);
             } catch (err) {
