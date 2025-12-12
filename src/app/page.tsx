@@ -34,6 +34,7 @@ export default function Home() {
 
   useEffect(() => {
     socket.on("online-users", (users: OnlineUser[]) => {
+      console.log("Online Users Received:", users);
       // Filter out self
       setOnlineUsers(users.filter(u => u.userId !== user?.id));
     });
@@ -42,6 +43,12 @@ export default function Home() {
       socket.off("online-users");
     };
   }, [user]);
+
+  // Log friends and active chat user for debugging
+  console.log("Mongo User:", mongoUser);
+  console.log("Friends:", mongoUser?.friends);
+  console.log("Online Users State:", onlineUsers);
+  console.log("Active Chat User:", activeChatUser);
 
   const startCall = async (targetId: string, type: 'audio' | 'video') => {
     setCallStatus("outgoing");
