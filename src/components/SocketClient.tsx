@@ -73,7 +73,14 @@ export function SocketClient() {
         });
 
         socket.on("signal", async ({ senderId, signal }) => {
-            if (!peerConnection.current) createPeerConnection();
+            const onIceCandidate = (candidate: RTCIceCandidate) => {
+                const { remoteUserId } = useCallStore.getState();
+                if (remoteUserId) {
+                    socket.emit('signal', { targetId: remoteUserId, signal: { candidate } });
+                }
+            };
+
+            if (!peerConnection.current) createPeerConnection(onIceCandidate);
 
             if (signal.type === 'offer') {
                 // Do NOT setRemoteUserId(senderId) here because senderId is a Socket ID, 

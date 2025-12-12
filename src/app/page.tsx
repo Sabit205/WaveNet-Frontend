@@ -41,7 +41,10 @@ export default function Home() {
     setRemoteUserId(targetId);
 
     // Initialize WebRTC
-    createPeerConnection();
+    const onIceCandidate = (candidate: RTCIceCandidate) => {
+      socket.emit('signal', { targetId, signal: { candidate } });
+    };
+    createPeerConnection(onIceCandidate);
     await startLocalStream(type);
 
     // Emit call event
