@@ -33,9 +33,15 @@ export function SocketClient() {
 
         socket.on("call-accepted", async ({ signal }) => {
             setCallStatus("active");
-            // Handle signal (answer)
+            // If we receive call-accepted, we are the caller.
+            // We should create the offer now.
             if (peerConnection.current) {
-                await peerConnection.current.setRemoteDescription(new RTCSessionDescription(signal));
+                const offer = await peerConnection.current.createOffer();
+                await peerConnection.current.setLocalDescription(offer);
+                const { remoteUserId } = useCallStore.getState();
+                if (remoteUserId) {
+                    socket.emit('signal', { targetId: remoteUserId, signal: offer });
+                }
             }
         });
 
