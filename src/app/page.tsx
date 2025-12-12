@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Phone, Video } from "lucide-react";
 import { useCallStore } from "@/store/useCallStore";
-import { useWebRTC } from "@/hooks/useWebRTC";
+import { useWebRTC } from "@/components/providers/WebRTCProvider";
 import Link from "next/link";
 
 export default function Home() {

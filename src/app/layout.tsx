@@ -1,15 +1,6 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-import { ClerkProvider, SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { SocketClient } from "@/components/SocketClient";
+import { WebRTCProvider } from "@/components/providers/WebRTCProvider";
 
-const inter = Inter({ subsets: ["latin"] });
-
-export const metadata: Metadata = {
-  title: "WhatsApp Clone",
-  description: "Real-time calling app",
-};
+// ... imports
 
 export default function RootLayout({
   children,
@@ -33,8 +24,10 @@ export default function RootLayout({
           </header>
           <main className="min-h-screen bg-background">
             <SignedIn>
-              <SocketClient />
-              {children}
+              <WebRTCProvider>
+                <SocketClient />
+                {children}
+              </WebRTCProvider>
             </SignedIn>
             <SignedOut>
               <div className="flex items-center justify-center h-[80vh]">

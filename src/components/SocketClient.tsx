@@ -6,7 +6,7 @@ import { socket } from "@/lib/socket";
 import { useCallStore } from "@/store/useCallStore";
 import { CallModal } from "./CallModal";
 import { ActiveCall } from "./ActiveCall";
-import { useWebRTC } from "@/hooks/useWebRTC";
+import { useWebRTC } from "@/components/providers/WebRTCProvider";
 
 export function SocketClient() {
     const { user } = useUser();
