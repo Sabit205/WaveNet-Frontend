@@ -46,7 +46,7 @@ export function SocketClient() {
             setCallStatus("incoming");
             setCaller({ id: callerId, name: callerName, avatar: callerAvatar });
             setCallType(callType);
-            setRemoteUserId(callerId); // IMPORTANT: Set remote user ID for callee
+            setRemoteUserId(callerId); // Set remote user ID for callee
         });
 
         socket.on("call-accepted", async ({ signal }) => {
@@ -76,11 +76,17 @@ export function SocketClient() {
             if (!peerConnection.current) createPeerConnection();
 
             if (signal.type === 'offer') {
-                setRemoteUserId(senderId); // Ensure we know who sent the offer
+                // Do NOT setRemoteUserId(senderId) here because senderId is a Socket ID, 
+                // and we need a User ID. We already have the User ID from 'incoming-call'.
+
                 await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(signal));
                 const answer = await peerConnection.current?.createAnswer();
                 await peerConnection.current?.setLocalDescription(answer);
-                socket.emit('signal', { targetId: senderId, signal: answer });
+
+                const { remoteUserId } = useCallStore.getState();
+                if (remoteUserId) {
+                    socket.emit('signal', { targetId: remoteUserId, signal: answer });
+                }
             } else if (signal.type === 'answer') {
                 await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(signal));
             } else if (signal.candidate) {
@@ -133,9 +139,6 @@ export function SocketClient() {
     };
 
     const handleEndCall = () => {
-        // We rely on the store state or just emit end-call. 
-        // Ideally we should pass the targetId, but the backend can look it up or we use remoteUserId.
-        // The store has remoteUserId.
         const { remoteUserId, callType } = useCallStore.getState();
         if (remoteUserId) {
             socket.emit("end-call", { receiverId: remoteUserId, callType });
