@@ -159,8 +159,8 @@ export function SocketClient() {
 
     const handleEndCall = () => {
         const { remoteUserId, callType } = useCallStore.getState();
-        if (remoteUserId) {
-            socket.emit("end-call", { receiverId: remoteUserId, callType });
+        if (remoteUserId && user) {
+            socket.emit("end-call", { callerId: user.id, receiverId: remoteUserId, callType });
         }
         endCall();
     };
