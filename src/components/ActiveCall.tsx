@@ -50,6 +50,8 @@ export function ActiveCall({ onEndCall }: ActiveCallProps) {
                         autoPlay
                         playsInline
                         className="w-full h-full object-cover"
+                        onLoadedMetadata={() => console.log("Remote video metadata loaded")}
+                        onCanPlay={() => console.log("Remote video can play")}
                     />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center text-white">

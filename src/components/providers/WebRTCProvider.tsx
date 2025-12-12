@@ -45,7 +45,16 @@ export const WebRTCProvider = ({ children }: { children: React.ReactNode }) => {
 
         peerConnection.current.ontrack = (event) => {
             console.log("Received remote track", event.streams[0]);
-            setRemoteStream(event.streams[0]);
+            // Create a new MediaStream object to ensure state updates trigger re-renders
+            // even if the underlying stream ID is the same.
+            if (event.streams && event.streams[0]) {
+                setRemoteStream(event.streams[0]);
+            } else {
+                // Fallback if no stream is associated (shouldn't happen with addTrack)
+                const newStream = new MediaStream();
+                newStream.addTrack(event.track);
+                setRemoteStream(newStream);
+            }
         };
     }, [setRemoteStream]);
 
