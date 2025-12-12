@@ -97,16 +97,20 @@ export function SocketClient() {
         });
 
         socket.on("messages-read", ({ byUserId }) => {
-            markMessagesAsRead(user.id); // This means asking for read rectipt logic.
-            // Wait, logic is: 'messages-read' means 'byUserId' read MY messages.
-            // So messages where senderId == ME and receiverId == byUserId should be marked read.
-            // Our store has 'markMessagesAsRead(senderId)' -> updates messages where senderId == senderId.
-            // Mistake in store logic vs event name.
-            // Let's fix store usage:
-            // We want to update our OWN messages to 'read'.
-            // Simple approach: reload or manually update local state.
-            // For now, let's just trigger a re-fetch or manual update.
-            // We'll update the store to handle "mark messages sent TO byUserId as read"
+            markMessagesAsRead(user.id);
+        });
+
+        // --- Social Events ---
+        socket.on("friend-request-received", (request) => {
+            const { addRequest } = useUserStore.getState();
+            addRequest(request);
+        });
+
+        socket.on("friend-request-accepted", ({ friend }) => {
+            const { addFriend, removeRequest } = useUserStore.getState();
+            addFriend(friend);
+            // Also re-fetch profile to be safe
+            handleConnect();
         });
 
         // --- Call Events ---
@@ -119,8 +123,6 @@ export function SocketClient() {
 
         socket.on("call-accepted", async ({ signal }) => {
             setCallStatus("active");
-            // If we receive call-accepted, we are the caller.
-            // We should create the offer now.
             if (peerConnection.current) {
                 const offer = await peerConnection.current.createOffer();
                 await peerConnection.current.setLocalDescription(offer);
@@ -151,9 +153,6 @@ export function SocketClient() {
             if (!peerConnection.current) createPeerConnection(onIceCandidate);
 
             if (signal.type === 'offer') {
-                // Do NOT setRemoteUserId(senderId) here because senderId is a Socket ID, 
-                // and we need a User ID. We already have the User ID from 'incoming-call'.
-
                 await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(signal));
                 const answer = await peerConnection.current?.createAnswer();
                 await peerConnection.current?.setLocalDescription(answer);
@@ -170,12 +169,20 @@ export function SocketClient() {
         });
 
         return () => {
+            socket.off("connect", handleConnect);
+            socket.off("new-message");
+            socket.off("message-sent");
+            socket.off("typing");
+            socket.off("stop-typing");
+            socket.off("messages-read");
+            socket.off("friend-request-received");
+            socket.off("friend-request-accepted");
             socket.off("incoming-call");
             socket.off("call-accepted");
             socket.off("call-rejected");
             socket.off("call-ended");
             socket.off("signal");
-            socket.disconnect();
+            if (socket.connected) socket.disconnect();
         };
     }, [user, setCallStatus, setCaller, setCallType, resetCall, endCall, createPeerConnection, peerConnection, setRemoteUserId]);
 

@@ -103,7 +103,7 @@ export default function Home() {
                       <div className="relative">
                         <Avatar>
                           <AvatarImage src={friend.imageUrl} />
-                          <AvatarFallback>{friend.fullName[0]}</AvatarFallback>
+                          <AvatarFallback>{friend.fullName?.[0]}</AvatarFallback>
                         </Avatar>
                         <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${isOnline ? 'bg-green-500' : 'bg-gray-300'}`}></span>
                       </div>
