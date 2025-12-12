@@ -155,7 +155,7 @@ export function SocketClient() {
     return (
         <>
             <CallModal onAccept={handleAcceptCall} onReject={handleRejectCall} />
-            {callStatus === 'active' && <ActiveCall onEndCall={handleEndCall} />}
+            {(callStatus === 'active' || callStatus === 'outgoing') && <ActiveCall onEndCall={handleEndCall} />}
         </>
     );
 }
