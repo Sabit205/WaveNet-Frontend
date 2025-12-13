@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { socket } from "@/lib/socket";
 import { useCallStore } from "@/store/useCallStore";
@@ -23,6 +23,7 @@ export function SocketClient() {
         resetCall
     } = useCallStore();
     const { createPeerConnection, startLocalStream, endCall, peerConnection } = useWebRTC();
+    const candidateQueue = useRef<RTCIceCandidate[]>([]);
 
     const { activeChatUser, addMessage, addTypingUser, removeTypingUser, markMessagesAsRead } = useChatStore();
     const { setMongoUser } = useUserStore();
@@ -153,6 +154,9 @@ export function SocketClient() {
             if (!peerConnection.current) createPeerConnection(onIceCandidate);
 
             if (signal.type === 'offer') {
+                // Do NOT setRemoteUserId(senderId) here because senderId is a Socket ID, 
+                // and we need a User ID. We already have the User ID from 'incoming-call'.
+
                 await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(signal));
                 const answer = await peerConnection.current?.createAnswer();
                 await peerConnection.current?.setLocalDescription(answer);
@@ -161,10 +165,32 @@ export function SocketClient() {
                 if (remoteUserId) {
                     socket.emit('signal', { targetId: remoteUserId, signal: answer });
                 }
+
+                // Process queued candidates
+                while (candidateQueue.current.length > 0) {
+                    const candidate = candidateQueue.current.shift();
+                    if (candidate) {
+                        await peerConnection.current?.addIceCandidate(candidate);
+                    }
+                }
+
             } else if (signal.type === 'answer') {
                 await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(signal));
+                // Process queued candidates
+                while (candidateQueue.current.length > 0) {
+                    const candidate = candidateQueue.current.shift();
+                    if (candidate) {
+                        await peerConnection.current?.addIceCandidate(candidate);
+                    }
+                }
             } else if (signal.candidate) {
-                await peerConnection.current?.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                const candidate = new RTCIceCandidate(signal.candidate);
+                if (peerConnection.current?.remoteDescription) {
+                    await peerConnection.current?.addIceCandidate(candidate);
+                } else {
+                    // Queue it
+                    candidateQueue.current.push(candidate);
+                }
             }
         });
 
