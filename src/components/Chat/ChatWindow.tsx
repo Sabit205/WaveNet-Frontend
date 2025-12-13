@@ -7,7 +7,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { X, Send, Phone, Video, Image as ImageIcon, Paperclip, Loader2, Check, CheckCheck, FileText } from "lucide-react";
+import { X, Send, Phone, Video, Image as ImageIcon, Paperclip, Loader2, Check, CheckCheck, FileText, Trash2 } from "lucide-react";
 import { useCallStore } from '@/store/useCallStore';
 import { useWebRTC } from '@/components/providers/WebRTCProvider';
 
@@ -21,18 +21,23 @@ interface ChatWindowProps {
     onClose: () => void;
 }
 
-interface PreviewFile {
-    url: string;
-    name: string;
+// Attachment structure for staging
+interface Attachment {
+    id: string;
+    file: File;
+    localUrl: string; // For immediate preview
+    cloudUrl?: string; // Set after upload
     type: 'image' | 'video' | 'file';
+    isUploading: boolean;
 }
 
 export function ChatWindow({ friend, onClose }: ChatWindowProps) {
     const { user } = useUser();
     const { getToken } = useAuth();
     const [newMessage, setNewMessage] = useState("");
-    const [isUploading, setIsUploading] = useState(false);
-    const [previewFile, setPreviewFile] = useState<PreviewFile | null>(null);
+
+    // Staging state
+    const [attachments, setAttachments] = useState<Attachment[]>([]);
 
     const { messages, fetchMessages, typingUsers } = useChatStore();
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -56,30 +61,118 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
 
     useEffect(() => {
         scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [conversationMessages, typingUsers, previewFile]);
+    }, [conversationMessages, typingUsers, attachments]);
+
+    // Handle Upload Logic per file
+    const uploadFileToCloudinary = async (file: File): Promise<string> => {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "");
+        const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+
+        if (!cloudName) throw new Error("Missing Cloudinary Config");
+
+        let resourceType = 'raw';
+        if (file.type.startsWith('image/')) resourceType = 'image';
+        else if (file.type.startsWith('video/')) resourceType = 'video';
+
+        const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
+            method: "POST",
+            body: formData
+        });
+
+        if (!res.ok) throw new Error("Upload failed");
+        const data = await res.json();
+        return data.secure_url;
+    };
+
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files) return;
+
+        const newAttachments: Attachment[] = [];
+        const files = Array.from(e.target.files);
+
+        // 1. Create local previews immediately
+        for (const file of files) {
+            let type: 'image' | 'video' | 'file' = 'file';
+            if (file.type.startsWith('image/')) type = 'image';
+            else if (file.type.startsWith('video/')) type = 'video';
+
+            newAttachments.push({
+                id: Math.random().toString(36).substring(7),
+                file,
+                localUrl: URL.createObjectURL(file),
+                type,
+                isUploading: true
+            });
+        }
+
+        setAttachments(prev => [...prev, ...newAttachments]);
+
+        // 2. Start uploads in background
+        for (const att of newAttachments) {
+            try {
+                const cloudUrl = await uploadFileToCloudinary(att.file);
+                setAttachments(prev => prev.map(p => p.id === att.id ? { ...p, cloudUrl, isUploading: false } : p));
+            } catch (err) {
+                console.error("Upload failed for", att.file.name, err);
+                // Remove failed upload or show error state. Removing for now.
+                setAttachments(prev => prev.filter(p => p.id !== att.id));
+                alert(`Failed to upload ${att.file.name}`);
+            }
+        }
+
+        // Reset input so same file can be selected again if needed
+        if (fileInputRef.current) fileInputRef.current.value = "";
+    };
+
+    const removeAttachment = (id: string) => {
+        setAttachments(prev => prev.filter(a => a.id !== id));
+    };
 
     const handleSendMessage = () => {
-        if ((!newMessage.trim() && !previewFile) || !user) return;
+        const isUploadingAny = attachments.some(a => a.isUploading);
+        if (isUploadingAny) {
+            alert("Please wait for files to finish uploading.");
+            return;
+        }
 
-        const messageType = previewFile ? previewFile.type : 'text';
-        const content = newMessage.trim() || (previewFile ? (previewFile.type === 'file' ? previewFile.name : previewFile.type.toUpperCase()) : '');
+        if ((!newMessage.trim() && attachments.length === 0) || !user) return;
 
-        const messageData = {
-            senderId: user.id,
-            receiverId: friend.clerkId,
-            content: content,
-            type: messageType,
-            fileUrl: previewFile?.url || "",
-            fileName: previewFile?.name || "",
-            createdAt: new Date().toISOString(),
-            isRead: false
-        };
+        // 1. Send Text Message (if exists)
+        if (newMessage.trim()) {
+            socket.emit("send-message", {
+                senderId: user.id,
+                receiverId: friend.clerkId,
+                content: newMessage.trim(),
+                type: 'text',
+                fileUrl: "",
+                fileName: "",
+                createdAt: new Date().toISOString(),
+                isRead: false
+            });
+        }
 
-        socket.emit("send-message", messageData);
+        // 2. Send Media Messages (one per attachment)
+        // Since backend doesn't support array, we send distinct messages.
+        attachments.forEach(att => {
+            if (att.cloudUrl) {
+                socket.emit("send-message", {
+                    senderId: user.id,
+                    receiverId: friend.clerkId,
+                    content: att.type === 'file' ? att.file.name : att.type.toUpperCase(),
+                    type: att.type,
+                    fileUrl: att.cloudUrl,
+                    fileName: att.file.name,
+                    createdAt: new Date().toISOString(),
+                    isRead: false
+                });
+            }
+        });
 
         // Reset state
         setNewMessage("");
-        setPreviewFile(null);
+        setAttachments([]);
         socket.emit("stop-typing", { senderId: user.id, receiverId: friend.clerkId });
     };
 
@@ -93,56 +186,6 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
         typingTimeoutRef.current = setTimeout(() => {
             socket.emit("stop-typing", { senderId: user?.id, receiverId: friend.clerkId });
         }, 3000);
-    };
-
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        setIsUploading(true);
-        try {
-            const formData = new FormData();
-            formData.append("file", file);
-            formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "");
-            const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-
-            if (!cloudName) {
-                alert("Cloudinary configuration missing");
-                return;
-            }
-
-            // Simple heuristic for resource type. 
-            // Cloudinary supports 'image', 'video', 'raw' (for other files).
-            let resourceType = 'raw';
-            if (file.type.startsWith('image/')) resourceType = 'image';
-            else if (file.type.startsWith('video/')) resourceType = 'video';
-
-            const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
-                method: "POST",
-                body: formData
-            });
-
-            if (!res.ok) throw new Error("Upload failed");
-            const data = await res.json();
-
-            // Store in preview, don't send yet
-            let type: 'image' | 'video' | 'file' = 'file';
-            if (file.type.startsWith('image/')) type = 'image';
-            else if (file.type.startsWith('video/')) type = 'video';
-
-            setPreviewFile({
-                url: data.secure_url,
-                name: file.name,
-                type: type
-            });
-
-        } catch (error) {
-            console.error(error);
-            alert("Upload failed");
-        } finally {
-            setIsUploading(false);
-            if (fileInputRef.current) fileInputRef.current.value = "";
-        }
     };
 
     const startCall = async (type: 'audio' | 'video') => {
@@ -168,7 +211,7 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
     const isTyping = typingUsers.includes(friend.clerkId);
 
     return (
-        <div className="flex flex-col h-[550px] w-full max-w-md bg-background border rounded-t-xl shadow-2xl overflow-hidden fixed bottom-0 right-4 md:right-[320px] z-50 transition-all duration-300">
+        <div className="flex flex-col h-[600px] w-full max-w-md bg-background border rounded-t-xl shadow-2xl overflow-hidden fixed bottom-0 right-4 md:right-[320px] z-50 transition-all duration-300">
             {/* Header */}
             <div className="p-3 border-b bg-primary text-primary-foreground flex justify-between items-center shadow-md z-10">
                 <div className="flex items-center gap-3">
@@ -197,33 +240,36 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
                     const isMe = msg.senderId === user?.id;
                     return (
                         <div key={i} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[75%] rounded-2xl p-3 shadow-sm ${isMe ? 'bg-primary text-primary-foreground rounded-br-none' : 'bg-card border rounded-bl-none'
+                            <div className={`max-w-[80%] rounded-2xl p-3 shadow-sm ${isMe ? 'bg-primary text-primary-foreground rounded-br-none' : 'bg-card border rounded-bl-none'
                                 }`}>
                                 {/* Media Content */}
-                                {msg.type === 'image' && (
+                                {msg.type === 'image' && msg.fileUrl && (
                                     <div className="mb-2">
-                                        <img src={msg.fileUrl} alt="Shared" className="rounded-lg max-h-[250px] w-full object-cover bg-black/10" />
+                                        <img src={msg.fileUrl} alt="Shared" className="rounded-lg max-h-[300px] w-full object-cover bg-black/10" loading="lazy" />
                                     </div>
                                 )}
-                                {msg.type === 'video' && (
+                                {msg.type === 'video' && msg.fileUrl && (
                                     <div className="mb-2">
-                                        <video src={msg.fileUrl} controls className="rounded-lg max-h-[250px] w-full bg-black/90 aspect-video" />
+                                        <video src={msg.fileUrl} controls className="rounded-lg max-h-[300px] w-full bg-black/90 aspect-video" >
+                                            Your browser does not support the video tag.
+                                        </video>
                                     </div>
                                 )}
-                                {msg.type === 'file' && (
+                                {msg.type === 'file' && msg.fileUrl && (
                                     <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-3 p-3 rounded-lg mb-2 ${isMe ? 'bg-white/10 hover:bg-white/20' : 'bg-muted hover:bg-muted/80'} transition-colors`}>
                                         <div className="p-2 bg-background/50 rounded-full">
                                             <FileText className="h-5 w-5" />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium truncate">{msg.fileName || "Attachment"}</p>
-                                            <p className="text-xs opacity-70">Click to view</p>
+                                            <p className="text-xs opacity-70">Click to Download</p>
                                         </div>
                                     </a>
                                 )}
 
                                 {/* Text Content */}
-                                {msg.content && (msg.type === 'text' || (msg.content !== msg.type && msg.content !== msg.type.toUpperCase() && msg.content !== msg.fileName)) && (
+                                {/* Logic: Show text if it exists AND it's not just the default 'IMAGE'/'VIDEO' type labels */}
+                                {msg.content && msg.content !== 'IMAGE' && msg.content !== 'VIDEO' && msg.content !== 'FILE' && (
                                     <p className="text-sm break-words whitespace-pre-wrap">{msg.content}</p>
                                 )}
 
@@ -240,30 +286,40 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
             </div>
 
             {/* Staging / Preview Area */}
-            {previewFile && (
-                <div className="px-4 py-2 bg-background border-t flex items-center justify-between animate-in slide-in-from-bottom-5">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                        {previewFile.type === 'image' && (
-                            <img src={previewFile.url} alt="Preview" className="h-12 w-12 object-cover rounded-md border" />
-                        )}
-                        {previewFile.type === 'video' && (
-                            <div className="h-12 w-12 bg-black rounded-md flex items-center justify-center">
-                                <Video className="h-6 w-6 text-white" />
-                            </div>
-                        )}
-                        {previewFile.type === 'file' && (
-                            <div className="h-12 w-12 bg-muted rounded-md flex items-center justify-center">
-                                <FileText className="h-6 w-6 text-muted-foreground" />
-                            </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium truncate max-w-[200px]">{previewFile.name}</p>
-                            <p className="text-[10px] text-muted-foreground uppercase">{previewFile.type}</p>
+            {attachments.length > 0 && (
+                <div className="px-4 py-2 bg-background border-t flex gap-2 overflow-x-auto min-h-[80px]">
+                    {attachments.map(att => (
+                        <div key={att.id} className="relative group shrink-0 w-16 h-16 rounded-md border overflow-hidden">
+                            {att.type === 'image' && (
+                                <img src={att.localUrl} alt="Preview" className="w-full h-full object-cover" />
+                            )}
+                            {att.type === 'video' && (
+                                <div className="w-full h-full bg-black flex items-center justify-center">
+                                    <Video className="h-6 w-6 text-white" />
+                                </div>
+                            )}
+                            {att.type === 'file' && (
+                                <div className="w-full h-full bg-muted flex items-center justify-center">
+                                    <FileText className="h-6 w-6 text-muted-foreground" />
+                                </div>
+                            )}
+
+                            {/* Loading Overlay */}
+                            {att.isUploading && (
+                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                    <Loader2 className="h-5 w-5 text-white animate-spin" />
+                                </div>
+                            )}
+
+                            {/* Remove Button */}
+                            <button
+                                onClick={() => removeAttachment(att.id)}
+                                className="absolute top-0.5 right-0.5 bg-black/50 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                                <X className="h-3 w-3" />
+                            </button>
                         </div>
-                    </div>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive" onClick={() => setPreviewFile(null)}>
-                        <X className="h-4 w-4" />
-                    </Button>
+                    ))}
                 </div>
             )}
 
@@ -273,35 +329,34 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
                     type="file"
                     ref={fileInputRef}
                     className="hidden"
-                    onChange={handleFileUpload}
-                // Accept all, let handler decide
+                    onChange={handleFileSelect}
+                    multiple
+                    accept="image/*,video/*,application/pdf"
                 />
 
-                <div className="flex gap-0.5">
-                    <Button
-                        size="icon"
-                        variant="ghost"
-                        className="shrink-0 text-muted-foreground hover:text-primary"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isUploading || !!previewFile}
-                        title="Upload File"
-                    >
-                        {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
-                    </Button>
-                </div>
+                <Button
+                    size="icon"
+                    variant="ghost"
+                    className="shrink-0 text-muted-foreground hover:text-primary hover:bg-muted"
+                    onClick={() => fileInputRef.current?.click()}
+                    title="Attach Files"
+                >
+                    <Paperclip className="h-5 w-5" />
+                </Button>
 
                 <Input
-                    placeholder="Type a message..."
+                    placeholder={attachments.length > 0 ? "Add a caption..." : "Type a message..."}
                     className="flex-1 bg-muted/50 border-none focus-visible:ring-1 focus-visible:ring-primary h-10 rounded-full px-4"
                     value={newMessage}
                     onChange={handleTyping}
                     onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
                 />
+
                 <Button
                     size="icon"
                     onClick={handleSendMessage}
-                    disabled={(!newMessage.trim() && !previewFile) || isUploading}
-                    className="rounded-full h-10 w-10 shrink-0 shadow-sm"
+                    disabled={(!newMessage.trim() && attachments.length === 0) || attachments.some(a => a.isUploading)}
+                    className="rounded-full h-10 w-10 shrink-0 shadow-sm transition-all"
                 >
                     <Send className="h-4 w-4 ml-0.5" />
                 </Button>
