@@ -19,11 +19,13 @@ export interface FriendRequest {
 interface UserStore {
     friends: Friend[];
     friendRequests: FriendRequest[];
-    mongoUser: any | null; // Full MongoDB user object
+    mongoUser: any | null;
+    onlineUsers: string[]; // List of online user IDs
 
     setFriends: (friends: Friend[]) => void;
     setFriendRequests: (requests: FriendRequest[]) => void;
     setMongoUser: (user: any) => void;
+    setOnlineUsers: (userIds: string[]) => void;
 
     addFriend: (friend: Friend) => void;
     removeRequest: (requestId: string) => void;
@@ -34,10 +36,12 @@ export const useUserStore = create<UserStore>((set) => ({
     friends: [],
     friendRequests: [],
     mongoUser: null,
+    onlineUsers: [],
 
     setFriends: (friends) => set({ friends }),
     setFriendRequests: (requests) => set({ friendRequests: requests }),
     setMongoUser: (user) => set({ mongoUser: user }),
+    setOnlineUsers: (userIds) => set({ onlineUsers: userIds }),
 
     addFriend: (friend) => set((state) => ({ friends: [...state.friends, friend] })),
 

@@ -101,6 +101,12 @@ export function SocketClient() {
             markMessagesAsRead(user.id);
         });
 
+        // --- Presence Events ---
+        socket.on("online-users", (users: { userId: string }[]) => {
+            const ids = users.map(u => u.userId);
+            useUserStore.getState().setOnlineUsers(ids);
+        });
+
         // --- Social Events ---
         socket.on("friend-request-received", (request) => {
             const { addRequest } = useUserStore.getState();
