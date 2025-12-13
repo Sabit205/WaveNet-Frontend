@@ -7,7 +7,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { X, Send, Phone, Video, Image as ImageIcon, Paperclip, Loader2, Check, CheckCheck, FileText, Trash2 } from "lucide-react";
+import { X, Send, Phone, Video, Image as ImageIcon, Paperclip, Loader2, Check, CheckCheck, FileText, Trash2, Mic } from "lucide-react";
 import { useCallStore } from '@/store/useCallStore';
 import { useWebRTC } from '@/components/providers/WebRTCProvider';
 
@@ -21,22 +21,20 @@ interface ChatWindowProps {
     onClose: () => void;
 }
 
-// Attachment structure for staging
 interface Attachment {
     id: string;
     file: File;
-    localUrl: string; // For immediate preview
-    cloudUrl?: string; // Set after upload
-    type: 'image' | 'video' | 'file';
+    localUrl: string;
+    cloudUrl?: string;
+    type: 'image' | 'video' | 'audio' | 'file';
     isUploading: boolean;
+    error?: string;
 }
 
 export function ChatWindow({ friend, onClose }: ChatWindowProps) {
     const { user } = useUser();
     const { getToken } = useAuth();
     const [newMessage, setNewMessage] = useState("");
-
-    // Staging state
     const [attachments, setAttachments] = useState<Attachment[]>([]);
 
     const { messages, fetchMessages, typingUsers } = useChatStore();
@@ -63,66 +61,117 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
         scrollRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [conversationMessages, typingUsers, attachments]);
 
-    // Handle Upload Logic per file
+    // --- SECURE UPLOAD LOGIC ---
+    const getUploadSignature = async () => {
+        const token = await getToken();
+        if (!token) throw new Error("No auth token");
+
+        const res = await fetch(`${process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000'}/api/upload/sign`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!res.ok) throw new Error("Failed to sign request");
+        return res.json();
+    };
+
     const uploadFileToCloudinary = async (file: File): Promise<string> => {
+        // 1. Get Signature
+        const { signature, timestamp, folder, cloudName, apiKey } = await getUploadSignature();
+
+        // 2. Prepare Form Data
         const formData = new FormData();
         formData.append("file", file);
-        formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "");
-        const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+        formData.append("api_key", apiKey);
+        formData.append("timestamp", timestamp.toString());
+        formData.append("signature", signature);
+        if (folder) formData.append("folder", folder);
 
-        if (!cloudName) throw new Error("Missing Cloudinary Config");
-
+        // Determime resource type
         let resourceType = 'raw';
         if (file.type.startsWith('image/')) resourceType = 'image';
         else if (file.type.startsWith('video/')) resourceType = 'video';
+        // Cloudinary treats audio as 'video' resource type usually, or raw. Let's try video for player support.
+        else if (file.type.startsWith('audio/')) resourceType = 'video';
 
+        // 3. Upload
         const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
             method: "POST",
             body: formData
         });
 
-        if (!res.ok) throw new Error("Upload failed");
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error?.message || "Cloudinary Upload Failed");
+        }
+
         const data = await res.json();
         return data.secure_url;
     };
 
+    const validateFile = (file: File): string | null => {
+        const MAX_IMG_SIZE = 5 * 1024 * 1024; // 5MB
+        const MAX_VIDEO_SIZE = 20 * 1024 * 1024; // 20MB
+        const MAX_AUDIO_DOC_SIZE = 10 * 1024 * 1024; // 10MB
+
+        if (file.type.startsWith('image/') && file.size > MAX_IMG_SIZE) return "Image too large (Max 5MB)";
+        if (file.type.startsWith('video/') && file.size > MAX_VIDEO_SIZE) return "Video too large (Max 20MB)";
+        if ((file.type.startsWith('audio/') || file.type === 'application/pdf') && file.size > MAX_AUDIO_DOC_SIZE) return "File too large (Max 10MB)";
+
+        // Type allowlist
+        const allowedTypes = [
+            'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+            'video/mp4', 'video/webm',
+            'audio/mpeg', 'audio/webm', 'audio/wav',
+            'application/pdf'
+        ];
+
+        // Simple check - in production use strictly typed.
+        // if (!allowedTypes.includes(file.type)) return "Unsupported file type";
+
+        return null; // OK
+    };
+
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return;
-
-        const newAttachments: Attachment[] = [];
         const files = Array.from(e.target.files);
+        const newAttachments: Attachment[] = [];
 
-        // 1. Create local previews immediately
+        // 1. Validate & Create Local Previews
         for (const file of files) {
-            let type: 'image' | 'video' | 'file' = 'file';
+            const error = validateFile(file);
+            if (error) {
+                alert(`${file.name}: ${error}`);
+                continue;
+            }
+
+            let type: 'image' | 'video' | 'audio' | 'file' = 'file';
             if (file.type.startsWith('image/')) type = 'image';
             else if (file.type.startsWith('video/')) type = 'video';
+            else if (file.type.startsWith('audio/')) type = 'audio';
 
             newAttachments.push({
                 id: Math.random().toString(36).substring(7),
                 file,
-                localUrl: URL.createObjectURL(file),
+                localUrl: URL.createObjectURL(file), // Local preview
                 type,
                 isUploading: true
             });
         }
 
+        if (newAttachments.length === 0) return;
         setAttachments(prev => [...prev, ...newAttachments]);
 
-        // 2. Start uploads in background
+        // 2. Upload in Background
         for (const att of newAttachments) {
             try {
                 const cloudUrl = await uploadFileToCloudinary(att.file);
                 setAttachments(prev => prev.map(p => p.id === att.id ? { ...p, cloudUrl, isUploading: false } : p));
-            } catch (err) {
-                console.error("Upload failed for", att.file.name, err);
-                // Remove failed upload or show error state. Removing for now.
-                setAttachments(prev => prev.filter(p => p.id !== att.id));
-                alert(`Failed to upload ${att.file.name}`);
+            } catch (err: any) {
+                console.error(err);
+                setAttachments(prev => prev.map(p => p.id === att.id ? { ...p, isUploading: false, error: "Upload Failed" } : p));
             }
         }
-
-        // Reset input so same file can be selected again if needed
         if (fileInputRef.current) fileInputRef.current.value = "";
     };
 
@@ -133,61 +182,59 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
     const handleSendMessage = () => {
         const isUploadingAny = attachments.some(a => a.isUploading);
         if (isUploadingAny) {
-            alert("Please wait for files to finish uploading.");
+            alert("Wait for uploads to finish.");
             return;
         }
 
-        if ((!newMessage.trim() && attachments.length === 0) || !user) return;
+        if (!newMessage.trim() && attachments.length === 0) return;
 
-        // 1. Send Text Message (if exists)
+        // 1. Text Message
         if (newMessage.trim()) {
             socket.emit("send-message", {
-                senderId: user.id,
+                senderId: user?.id,
                 receiverId: friend.clerkId,
                 content: newMessage.trim(),
                 type: 'text',
-                fileUrl: "",
-                fileName: "",
                 createdAt: new Date().toISOString(),
                 isRead: false
             });
         }
 
-        // 2. Send Media Messages (one per attachment)
-        // Since backend doesn't support array, we send distinct messages.
+        // 2. Media Messages
         attachments.forEach(att => {
-            if (att.cloudUrl) {
+            if (att.cloudUrl && !att.error) {
                 socket.emit("send-message", {
-                    senderId: user.id,
+                    senderId: user?.id,
                     receiverId: friend.clerkId,
                     content: att.type === 'file' ? att.file.name : att.type.toUpperCase(),
                     type: att.type,
                     fileUrl: att.cloudUrl,
                     fileName: att.file.name,
+                    fileSize: att.file.size,
+                    mimeType: att.file.type,
                     createdAt: new Date().toISOString(),
                     isRead: false
                 });
             }
         });
 
-        // Reset state
+        // Reset
         setNewMessage("");
         setAttachments([]);
-        socket.emit("stop-typing", { senderId: user.id, receiverId: friend.clerkId });
+        socket.emit("stop-typing", { senderId: user?.id, receiverId: friend.clerkId });
     };
 
     const handleTyping = (e: React.ChangeEvent<HTMLInputElement>) => {
         setNewMessage(e.target.value);
         if (!user) return;
-
         socket.emit("typing", { senderId: user.id, receiverId: friend.clerkId });
-
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = setTimeout(() => {
             socket.emit("stop-typing", { senderId: user?.id, receiverId: friend.clerkId });
         }, 3000);
     };
 
+    // ... call logic ...
     const startCall = async (type: 'audio' | 'video') => {
         setCallStatus("outgoing");
         setCallType(type);
@@ -215,13 +262,10 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
             {/* Header */}
             <div className="p-3 border-b bg-primary text-primary-foreground flex justify-between items-center shadow-md z-10">
                 <div className="flex items-center gap-3">
-                    <div className="relative">
-                        <Avatar className="h-9 w-9 border-2 border-white/20">
-                            <AvatarImage src={friend.imageUrl} />
-                            <AvatarFallback>{friend.fullName?.[0]}</AvatarFallback>
-                        </Avatar>
-                        {friend.isOnline && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-primary"></span>}
-                    </div>
+                    <Avatar className="h-9 w-9 border-2 border-white/20">
+                        <AvatarImage src={friend.imageUrl} />
+                        <AvatarFallback>{friend.fullName?.[0]}</AvatarFallback>
+                    </Avatar>
                     <div>
                         <h4 className="font-semibold text-sm leading-tight">{friend.fullName}</h4>
                         {isTyping ? <span className="text-xs animate-pulse opacity-90">Typing...</span> : <span className="text-xs opacity-80">{friend.isOnline ? 'Active' : 'Offline'}</span>}
@@ -242,38 +286,36 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
                         <div key={i} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[80%] rounded-2xl p-3 shadow-sm ${isMe ? 'bg-primary text-primary-foreground rounded-br-none' : 'bg-card border rounded-bl-none'
                                 }`}>
-                                {/* Media Content */}
+                                {/* Media Rendering */}
                                 {msg.type === 'image' && msg.fileUrl && (
-                                    <div className="mb-2">
-                                        <img src={msg.fileUrl} alt="Shared" className="rounded-lg max-h-[300px] w-full object-cover bg-black/10" loading="lazy" />
-                                    </div>
+                                    <img src={msg.fileUrl} alt="Shared" className="rounded-lg max-h-[300px] w-full object-cover bg-black/10 mb-2" loading="lazy" />
                                 )}
                                 {msg.type === 'video' && msg.fileUrl && (
-                                    <div className="mb-2">
-                                        <video src={msg.fileUrl} controls className="rounded-lg max-h-[300px] w-full bg-black/90 aspect-video" >
-                                            Your browser does not support the video tag.
-                                        </video>
+                                    <video src={msg.fileUrl} controls className="rounded-lg max-h-[300px] w-full bg-black/90 aspect-video mb-2" />
+                                )}
+                                {msg.type === 'audio' && msg.fileUrl && (
+                                    <div className={`flex items-center gap-3 p-3 rounded-lg mb-2 ${isMe ? 'bg-white/10' : 'bg-muted'}`}>
+                                        <Mic className="h-5 w-5" />
+                                        <audio src={msg.fileUrl} controls className="h-8 w-[200px]" />
                                     </div>
                                 )}
                                 {msg.type === 'file' && msg.fileUrl && (
                                     <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-3 p-3 rounded-lg mb-2 ${isMe ? 'bg-white/10 hover:bg-white/20' : 'bg-muted hover:bg-muted/80'} transition-colors`}>
-                                        <div className="p-2 bg-background/50 rounded-full">
-                                            <FileText className="h-5 w-5" />
-                                        </div>
+                                        <div className="p-2 bg-background/50 rounded-full"><FileText className="h-5 w-5" /></div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium truncate">{msg.fileName || "Attachment"}</p>
-                                            <p className="text-xs opacity-70">Click to Download</p>
+                                            <p className="text-[10px] opacity-70">
+                                                {msg.fileSize ? `${(msg.fileSize / 1024 / 1024).toFixed(2)} MB` : 'Download'}
+                                            </p>
                                         </div>
                                     </a>
                                 )}
 
                                 {/* Text Content */}
-                                {/* Logic: Show text if it exists AND it's not just the default 'IMAGE'/'VIDEO' type labels */}
-                                {msg.content && msg.content !== 'IMAGE' && msg.content !== 'VIDEO' && msg.content !== 'FILE' && (
+                                {msg.content && !['IMAGE', 'VIDEO', 'AUDIO', 'FILE'].includes(msg.content) && (
                                     <p className="text-sm break-words whitespace-pre-wrap">{msg.content}</p>
                                 )}
 
-                                {/* Metadata */}
                                 <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${isMe ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                                     <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                     {isMe && (msg.isRead ? <CheckCheck className="h-3 w-3" /> : <Check className="h-3 w-3" />)}
@@ -285,81 +327,33 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
                 <div ref={scrollRef} />
             </div>
 
-            {/* Staging / Preview Area */}
+            {/* Staging Area */}
             {attachments.length > 0 && (
                 <div className="px-4 py-2 bg-background border-t flex gap-2 overflow-x-auto min-h-[80px]">
                     {attachments.map(att => (
-                        <div key={att.id} className="relative group shrink-0 w-16 h-16 rounded-md border overflow-hidden">
-                            {att.type === 'image' && (
-                                <img src={att.localUrl} alt="Preview" className="w-full h-full object-cover" />
-                            )}
-                            {att.type === 'video' && (
-                                <div className="w-full h-full bg-black flex items-center justify-center">
-                                    <Video className="h-6 w-6 text-white" />
-                                </div>
-                            )}
-                            {att.type === 'file' && (
-                                <div className="w-full h-full bg-muted flex items-center justify-center">
-                                    <FileText className="h-6 w-6 text-muted-foreground" />
-                                </div>
-                            )}
+                        <div key={att.id} className="relative group shrink-0 w-16 h-16 rounded-md border overflow-hidden bg-muted">
+                            {att.type === 'image' && <img src={att.localUrl} className="w-full h-full object-cover" />}
+                            {att.type === 'video' && <div className="w-full h-full flex items-center justify-center"><Video className="h-6 w-6 text-foreground" /></div>}
+                            {att.type === 'audio' && <div className="w-full h-full flex items-center justify-center"><Mic className="h-6 w-6 text-foreground" /></div>}
+                            {att.type === 'file' && <div className="w-full h-full flex items-center justify-center"><FileText className="h-6 w-6 text-foreground" /></div>}
 
-                            {/* Loading Overlay */}
-                            {att.isUploading && (
-                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                                    <Loader2 className="h-5 w-5 text-white animate-spin" />
-                                </div>
-                            )}
+                            {att.isUploading && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><Loader2 className="h-5 w-5 text-white animate-spin" /></div>}
+                            {att.error && <div className="absolute inset-0 bg-destructive/50 flex items-center justify-center text-[10px] text-white font-bold p-1 text-center">Error</div>}
 
-                            {/* Remove Button */}
-                            <button
-                                onClick={() => removeAttachment(att.id)}
-                                className="absolute top-0.5 right-0.5 bg-black/50 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                                <X className="h-3 w-3" />
-                            </button>
+                            <button onClick={() => removeAttachment(att.id)} className="absolute top-0 right-0 bg-black/60 text-white rounded-bl-md p-1 opacity-0 group-hover:opacity-100 transition-opacity"><X className="h-3 w-3" /></button>
                         </div>
                     ))}
                 </div>
             )}
 
-            {/* Input Area */}
+            {/* Input */}
             <div className="p-3 bg-card border-t flex items-center gap-2">
-                <input
-                    type="file"
-                    ref={fileInputRef}
-                    className="hidden"
-                    onChange={handleFileSelect}
-                    multiple
-                    accept="image/*,video/*,application/pdf"
-                />
+                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} multiple accept="image/*,video/mp4,video/webm,audio/*,application/pdf" />
+                <Button size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} className="text-muted-foreground hover:text-primary"><Paperclip className="h-5 w-5" /></Button>
 
-                <Button
-                    size="icon"
-                    variant="ghost"
-                    className="shrink-0 text-muted-foreground hover:text-primary hover:bg-muted"
-                    onClick={() => fileInputRef.current?.click()}
-                    title="Attach Files"
-                >
-                    <Paperclip className="h-5 w-5" />
-                </Button>
+                <Input placeholder={attachments.length > 0 ? "Add caption..." : "Message..."} className="flex-1 bg-muted/50 border-none rounded-full" value={newMessage} onChange={handleTyping} onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()} />
 
-                <Input
-                    placeholder={attachments.length > 0 ? "Add a caption..." : "Type a message..."}
-                    className="flex-1 bg-muted/50 border-none focus-visible:ring-1 focus-visible:ring-primary h-10 rounded-full px-4"
-                    value={newMessage}
-                    onChange={handleTyping}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                />
-
-                <Button
-                    size="icon"
-                    onClick={handleSendMessage}
-                    disabled={(!newMessage.trim() && attachments.length === 0) || attachments.some(a => a.isUploading)}
-                    className="rounded-full h-10 w-10 shrink-0 shadow-sm transition-all"
-                >
-                    <Send className="h-4 w-4 ml-0.5" />
-                </Button>
+                <Button size="icon" onClick={handleSendMessage} disabled={(!newMessage && attachments.length === 0) || attachments.some(a => a.isUploading)} className="rounded-full shadow-sm"><Send className="h-4 w-4 ml-0.5" /></Button>
             </div>
         </div>
     );

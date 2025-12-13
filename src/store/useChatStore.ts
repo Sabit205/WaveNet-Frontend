@@ -5,9 +5,11 @@ export interface Message {
     senderId: string;
     receiverId: string;
     content: string;
-    type: 'text' | 'image' | 'video' | 'file';
+    type: 'text' | 'image' | 'video' | 'audio' | 'file';
     fileUrl?: string;
     fileName?: string;
+    fileSize?: number;
+    mimeType?: string;
     isRead: boolean;
     createdAt: string;
 }
