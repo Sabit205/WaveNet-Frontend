@@ -39,7 +39,7 @@ export function RightPanel() {
     );
 
     return (
-        <div className="w-[280px] hidden lg:flex flex-col h-screen sticky top-0 p-4 border-l bg-card overflow-y-auto">
+        <div className="w-[280px] hidden xl:flex flex-col h-screen sticky top-0 p-4 border-l bg-card overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-muted-foreground">Contacts</h2>
                 <div className="flex gap-2">

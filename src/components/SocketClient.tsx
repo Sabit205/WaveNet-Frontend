@@ -270,6 +270,8 @@ export function SocketClient() {
             socket.emit("end-call", { callerId: user.id, receiverId: remoteUserId, callType });
         }
         endCall();
+        // Return to dashboard logic
+        useChatStore.getState().setActiveChatUser(null);
     };
 
     return (

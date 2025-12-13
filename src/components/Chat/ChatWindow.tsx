@@ -11,13 +11,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { X, Send, Phone, Video, Image as ImageIcon, Paperclip, Loader2, Check, CheckCheck, FileText, Trash2, Mic, AlertCircle } from "lucide-react";
 import { useCallStore } from '@/store/useCallStore';
 import { useWebRTC } from '@/components/providers/WebRTCProvider';
+import { MediaPreviewModal } from './MediaPreviewModal';
 
 interface ChatWindowProps {
     friend: {
         clerkId: string;
         fullName: string;
         imageUrl: string;
-        // isOnline prop is now optional/fallback as we check store
         isOnline?: boolean;
     };
     onClose: () => void;
@@ -39,16 +39,25 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
     const [newMessage, setNewMessage] = useState("");
     const [attachments, setAttachments] = useState<Attachment[]>([]);
 
+    // Media Preview State
+    const [previewFile, setPreviewFile] = useState<{ url: string, type: 'image' | 'video', name?: string } | null>(null);
+
     const { messages, fetchMessages, typingUsers } = useChatStore();
-    const { onlineUsers } = useUserStore(); // Get global online status
+    const { onlineUsers } = useUserStore();
     const scrollRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    const { setCallStatus, setCallType, setRemoteUserId } = useCallStore();
+    const { callStatus, setCallStatus, setCallType, setRemoteUserId } = useCallStore();
     const { createPeerConnection, startLocalStream } = useWebRTC();
 
-    // Determine if friend is online checking the store
+    // Auto-close if call becomes active
+    useEffect(() => {
+        if (callStatus === 'active') {
+            onClose();
+        }
+    }, [callStatus, onClose]);
+
     const isFriendOnline = onlineUsers.includes(friend.clerkId);
 
     const conversationMessages = messages.filter(
@@ -67,7 +76,7 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
         scrollRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [conversationMessages, typingUsers, attachments]);
 
-    // --- SECURE UPLOAD LOGIC ---
+    // ... upload logic ...
     const getUploadSignature = async () => {
         const token = await getToken();
         if (!token) throw new Error("No auth token");
@@ -142,7 +151,7 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
             newAttachments.push({
                 id: Math.random().toString(36).substring(7),
                 file,
-                localUrl: URL.createObjectURL(file), // Local preview
+                localUrl: URL.createObjectURL(file),
                 type,
                 isUploading: true
             });
@@ -176,7 +185,6 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
 
         if (!newMessage.trim() && attachments.length === 0) return;
 
-        // 1. Text Message
         if (newMessage.trim()) {
             socket.emit("send-message", {
                 senderId: user?.id,
@@ -188,7 +196,6 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
             });
         }
 
-        // 2. Media Messages
         attachments.forEach(att => {
             if (att.cloudUrl && !att.error) {
                 socket.emit("send-message", {
@@ -221,7 +228,6 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
         }, 3000);
     };
 
-    // ... call logic ...
     const startCall = async (type: 'audio' | 'video') => {
         setCallStatus("outgoing");
         setCallType(type);
@@ -240,6 +246,8 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
             callerName: user?.fullName,
             callerAvatar: user?.imageUrl
         });
+
+        onClose(); // Close chat window immediately on outgoing call
     };
 
     const isTyping = typingUsers.includes(friend.clerkId);
@@ -291,10 +299,17 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
                                 )}
 
                                 {msg.type === 'image' && msg.fileUrl && (
-                                    <img src={msg.fileUrl} alt="Shared" className="rounded-lg max-h-[300px] w-full object-cover bg-black/10 mb-2" loading="lazy" />
+                                    <div className="cursor-pointer" onClick={() => setPreviewFile({ url: msg.fileUrl!, type: 'image', name: msg.fileName })}>
+                                        <img src={msg.fileUrl} alt="Shared" className="rounded-lg max-h-[300px] w-full object-cover bg-black/10 mb-2 hover:opacity-90 transition-opacity" loading="lazy" />
+                                    </div>
                                 )}
                                 {msg.type === 'video' && msg.fileUrl && (
-                                    <video src={msg.fileUrl} controls className="rounded-lg max-h-[300px] w-full bg-black/90 aspect-video mb-2" />
+                                    <div className="cursor-pointer" onClick={() => setPreviewFile({ url: msg.fileUrl!, type: 'video', name: msg.fileName })}>
+                                        <video src={msg.fileUrl} className="rounded-lg max-h-[300px] w-full bg-black/90 aspect-video mb-2" />
+                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                            {/* Play Icon Overlay could go here */}
+                                        </div>
+                                    </div>
                                 )}
                                 {msg.type === 'audio' && msg.fileUrl && (
                                     <div className={`flex items-center gap-3 p-3 rounded-lg mb-2 ${isMe ? 'bg-white/10' : 'bg-muted'}`}>
@@ -330,7 +345,7 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
                 <div ref={scrollRef} />
             </div>
 
-            {/* Staging Area */}
+            {/* Staging Area - Unchanged */}
             {attachments.length > 0 && (
                 <div className="px-4 py-2 bg-background border-t flex gap-2 overflow-x-auto min-h-[80px]">
                     {attachments.map(att => (
@@ -358,6 +373,17 @@ export function ChatWindow({ friend, onClose }: ChatWindowProps) {
 
                 <Button size="icon" onClick={handleSendMessage} disabled={(!newMessage && attachments.length === 0) || attachments.some(a => a.isUploading)} className="rounded-full shadow-sm"><Send className="h-4 w-4 ml-0.5" /></Button>
             </div>
+
+            {/* Media Preview Modal */}
+            {previewFile && (
+                <MediaPreviewModal
+                    isOpen={!!previewFile}
+                    onClose={() => setPreviewFile(null)}
+                    fileUrl={previewFile.url}
+                    type={previewFile.type}
+                    fileName={previewFile.name}
+                />
+            )}
         </div>
     );
 }
