@@ -5,19 +5,22 @@ export interface Message {
     senderId: string;
     receiverId: string;
     content: string;
-    type: 'text' | 'image';
+    type: 'text' | 'image' | 'video' | 'file';
+    fileUrl?: string;
+    fileName?: string;
     isRead: boolean;
     createdAt: string;
 }
 
 interface ChatStore {
-    activeChatUser: string | null; // Clerk ID of the user we are chatting with
+    activeChatUser: string | null;
     messages: Message[];
-    typingUsers: string[]; // List of user IDs currently typing to us
+    typingUsers: string[];
 
     setActiveChatUser: (userId: string | null) => void;
     setMessages: (messages: Message[]) => void;
     addMessage: (message: Message) => void;
+    fetchMessages: (senderId: string, receiverId: string, getToken: () => Promise<string | null>) => Promise<void>;
 
     addTypingUser: (userId: string) => void;
     removeTypingUser: (userId: string) => void;
@@ -33,6 +36,21 @@ export const useChatStore = create<ChatStore>((set) => ({
     setActiveChatUser: (userId) => set({ activeChatUser: userId }),
     setMessages: (messages) => set({ messages }),
     addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+
+    fetchMessages: async (senderId, receiverId, getToken) => {
+        try {
+            const token = await getToken();
+            const res = await fetch(`${process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000'}/api/chat/${receiverId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                set({ messages: data });
+            }
+        } catch (error) {
+            console.error("Failed to fetch messages:", error);
+        }
+    },
 
     addTypingUser: (userId) => set((state) => ({
         typingUsers: state.typingUsers.includes(userId)
