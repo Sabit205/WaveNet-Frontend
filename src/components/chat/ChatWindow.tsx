@@ -91,7 +91,10 @@ export function ChatWindow({ conversationId, otherUser }: { conversationId?: str
 
         const handleMessagesSeen = (data: any) => {
             if (data.conversationId === conversationId) {
-                setMessages(prev => prev.map(msg => ({ ...msg, seen: true })));
+                setMessages(prev => prev.map(msg => ({
+                    ...msg,
+                    seenBy: msg.seenBy ? [...msg.seenBy, chatPartner?.id] : [chatPartner?.id] // Optimistic update
+                })));
             }
         };
 
@@ -191,8 +194,8 @@ export function ChatWindow({ conversationId, otherUser }: { conversationId?: str
                                             {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </p>
                                         {isOwn && (
-                                            <span className={cn("text-[10px] font-bold", msg.seen ? "text-blue-200" : "text-white/60")}>
-                                                {msg.seen ? "✓✓" : "✓"}
+                                            <span className={cn("text-[10px] font-bold", (msg.seenBy?.length > 0 || msg.seen) ? "text-blue-200" : "text-white/60")}>
+                                                {(msg.seenBy?.length > 0 || msg.seen) ? "✓✓" : "✓"}
                                             </span>
                                         )}
                                     </div>
