@@ -32,8 +32,6 @@ export const SocketProvider = ({
 
     useEffect(() => {
         const socketInstance = new (ClientIO as any)(process.env.NEXT_PUBLIC_SERVER_URL!, {
-            path: "/socket.io",
-            addTrailingSlash: false,
             withCredentials: true,
         });
 
