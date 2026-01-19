@@ -7,16 +7,18 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
+import { useSocket } from "@/providers/SocketProvider";
 
 interface SidebarProps {
     className?: string;
-    onSelectConversation?: (id: string) => void;
+    onSelectConversation?: (id: string, user: any) => void;
     selectedId?: string;
 }
 
 export function Sidebar({ className, onSelectConversation, selectedId }: SidebarProps) {
     const { user, isLoaded } = useUser();
     const [conversations, setConversations] = useState<any[]>([]);
+    const { socket } = useSocket();
 
     const fetchConversations = async () => {
         if (user?.id) {
@@ -30,6 +32,30 @@ export function Sidebar({ className, onSelectConversation, selectedId }: Sidebar
     };
 
     useEffect(() => {
+        if (user && socket) {
+            socket.emit("setup", user);
+
+            const handleUserOnline = (userId: string) => {
+                setConversations(prev => prev.map(c => {
+                    const other = getOtherParticipant(c);
+                    if (other.clerkId === userId) {
+                        // We could update local state here if we had deep structure access
+                        // For now, refetching is safe and consistent
+                    }
+                    return c;
+                }));
+                fetchConversations();
+            };
+
+            socket.on('userOnline', handleUserOnline);
+
+            return () => {
+                socket.off('userOnline', handleUserOnline);
+            };
+        }
+    }, [user, socket]);
+
+    useEffect(() => {
         fetchConversations();
     }, [user]);
 
@@ -39,9 +65,6 @@ export function Sidebar({ className, onSelectConversation, selectedId }: Sidebar
 
     const handleConversationCreated = (conversationId: string) => {
         fetchConversations();
-        if (onSelectConversation) {
-            onSelectConversation(conversationId);
-        }
     };
 
     return (
@@ -65,7 +88,7 @@ export function Sidebar({ className, onSelectConversation, selectedId }: Sidebar
                                     "flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:bg-slate-200",
                                     selectedId === conv._id ? "bg-slate-200" : ""
                                 )}
-                                onClick={() => onSelectConversation && onSelectConversation(conv._id)}
+                                onClick={() => onSelectConversation && onSelectConversation(conv._id, otherUser)}
                             >
                                 <Avatar>
                                     <AvatarImage src={otherUser.image} />

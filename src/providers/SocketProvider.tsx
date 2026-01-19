@@ -37,6 +37,10 @@ export const SocketProvider = ({
 
         socketInstance.on("connect", () => {
             setIsConnected(true);
+            // We need user info here. 
+            // Since we can't easily access hook state inside this effect without deps,
+            // we'll rely on a second effect or assume user is available via props if we refactor.
+            // BUT, cleaner way: The consuming component (like Sidebar or Page) invokes the setup.
         });
 
         socketInstance.on("disconnect", () => {

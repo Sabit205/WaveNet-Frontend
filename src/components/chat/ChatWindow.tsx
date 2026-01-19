@@ -11,7 +11,7 @@ import { useUser } from "@clerk/nextjs";
 import axios from "axios";
 import { cn } from "@/lib/utils";
 
-export function ChatWindow({ conversationId }: { conversationId?: string }) {
+export function ChatWindow({ conversationId, otherUser }: { conversationId?: string, otherUser?: any }) {
     const [messages, setMessages] = useState<any[]>([]);
     const [inputText, setInputText] = useState("");
     const { socket } = useSocket();
@@ -33,6 +33,13 @@ export function ChatWindow({ conversationId }: { conversationId?: string }) {
     }, [conversationId]);
 
     useEffect(() => {
+        // Auto-scroll to bottom on new messages
+        if (scrollRef.current) {
+            scrollRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [messages]);
+
+    useEffect(() => {
         if (!socket || !conversationId) return;
 
         // Join the conversation room
@@ -41,7 +48,6 @@ export function ChatWindow({ conversationId }: { conversationId?: string }) {
         const handleNewMessage = (message: any) => {
             if (message.conversationId === conversationId) {
                 setMessages((prev) => [...prev, message]);
-                // Scroll to bottom logic would go here
             }
         };
 
@@ -85,11 +91,12 @@ export function ChatWindow({ conversationId }: { conversationId?: string }) {
             {/* Header */}
             <div className="p-4 border-b flex items-center gap-3">
                 <Avatar>
-                    <AvatarFallback>U</AvatarFallback>
+                    <AvatarImage src={otherUser?.image} />
+                    <AvatarFallback>{otherUser?.username?.[0] || 'U'}</AvatarFallback>
                 </Avatar>
                 <div>
-                    <p className="font-bold">User Name</p>
-                    <p className="text-xs text-green-500">Online</p>
+                    <p className="font-bold">{otherUser?.username || 'User'}</p>
+                    <p className="text-xs text-green-500">{otherUser?.online ? 'Online' : 'Offline'}</p>
                 </div>
             </div>
 
