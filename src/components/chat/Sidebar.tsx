@@ -8,33 +8,47 @@ import axios from "axios";
 import { useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 
-export function Sidebar({ className }: { className?: string }) {
+interface SidebarProps {
+    className?: string;
+    onSelectConversation?: (id: string) => void;
+    selectedId?: string;
+}
+
+export function Sidebar({ className, onSelectConversation, selectedId }: SidebarProps) {
     const { user, isLoaded } = useUser();
     const [conversations, setConversations] = useState<any[]>([]);
 
-    useEffect(() => {
+    const fetchConversations = async () => {
         if (user?.id) {
-            const fetchConversations = async () => {
-                try {
-                    const res = await axios.get(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/conversations/${user.id}`);
-                    setConversations(res.data);
-                } catch (error) {
-                    console.error("Error fetching conversations:", error);
-                }
-            };
-            fetchConversations();
+            try {
+                const res = await axios.get(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/conversations/${user.id}`);
+                setConversations(res.data);
+            } catch (error) {
+                console.error("Error fetching conversations:", error);
+            }
         }
+    };
+
+    useEffect(() => {
+        fetchConversations();
     }, [user]);
 
     const getOtherParticipant = (conv: any) => {
         return conv.participants.find((p: any) => p.clerkId !== user?.id) || {};
     };
 
+    const handleConversationCreated = (conversationId: string) => {
+        fetchConversations();
+        if (onSelectConversation) {
+            onSelectConversation(conversationId);
+        }
+    };
+
     return (
         <div className={cn("flex flex-col h-full bg-slate-50 border-r w-80", className)}>
             <div className="p-4 border-b">
                 <h1 className="text-xl font-bold mb-4">WaveNet</h1>
-                <UserSearch />
+                <UserSearch onConversationCreated={handleConversationCreated} />
             </div>
             <ScrollArea className="flex-1">
                 <div className="p-2 space-y-2">
@@ -45,7 +59,14 @@ export function Sidebar({ className }: { className?: string }) {
                     {conversations.map(conv => {
                         const otherUser = getOtherParticipant(conv);
                         return (
-                            <div key={conv._id} className="flex items-center gap-3 p-3 hover:bg-slate-200 rounded-lg cursor-pointer">
+                            <div
+                                key={conv._id}
+                                className={cn(
+                                    "flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:bg-slate-200",
+                                    selectedId === conv._id ? "bg-slate-200" : ""
+                                )}
+                                onClick={() => onSelectConversation && onSelectConversation(conv._id)}
+                            >
                                 <Avatar>
                                     <AvatarImage src={otherUser.image} />
                                     <AvatarFallback>{otherUser.username?.[0]}</AvatarFallback>

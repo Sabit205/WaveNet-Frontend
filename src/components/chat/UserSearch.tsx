@@ -16,7 +16,7 @@ import { useUser } from "@clerk/nextjs";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 
-export function UserSearch() {
+export function UserSearch({ onConversationCreated }: { onConversationCreated?: (id: string) => void }) {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [users, setUsers] = useState<any[]>([]);
@@ -30,8 +30,8 @@ export function UserSearch() {
             if (searchTerm) {
                 setLoading(true);
                 try {
-                    // Actual search API
-                    const res = await axios.get(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/users/search?q=${searchTerm}`);
+                    // Actual search API with currentUser exclusion
+                    const res = await axios.get(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/users/search?q=${searchTerm}&exclude=${currentUser?.id}`);
                     setUsers(res.data);
                 } catch (error) {
                     console.error(error);
@@ -44,18 +44,18 @@ export function UserSearch() {
         }, 500);
 
         return () => clearTimeout(delayDebounceFn);
-    }, [searchTerm]);
+    }, [searchTerm, currentUser]);
 
     const startConversation = async (otherUserId: string) => {
         try {
             const res = await axios.post(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/conversations`, {
-                senderId: currentUser?.id, // Sent as Clerk ID, handled by server
+                senderId: currentUser?.id,
                 receiverId: otherUserId
             });
             setIsOpen(false);
-            router.refresh(); // Or better, trigger a callback to update sidebar
-            // Navigate or select conversation logic here if needed
-            // For now just refresh or we can add to conversation list via state
+            if (onConversationCreated) {
+                onConversationCreated(res.data._id);
+            }
         } catch (error) {
             console.error(error);
         }

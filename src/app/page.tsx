@@ -17,7 +17,11 @@ export default function Home() {
   return (
     <div className="flex h-screen items-center justify-center bg-slate-100">
       <div className="flex w-full h-full max-w-[1600px] bg-white shadow-xl overflow-hidden">
-        <Sidebar className="hidden md:flex" />
+        <Sidebar
+          className="hidden md:flex"
+          onSelectConversation={setSelectedConversationId}
+          selectedId={selectedConversationId}
+        />
         <ChatWindow conversationId={selectedConversationId} />
       </div>
     </div>
