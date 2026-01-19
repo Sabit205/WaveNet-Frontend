@@ -35,22 +35,16 @@ export function Sidebar({ className, onSelectConversation, selectedId }: Sidebar
         if (user && socket) {
             socket.emit("setup", user);
 
-            const handleUserOnline = (userId: string) => {
-                setConversations(prev => prev.map(c => {
-                    const other = getOtherParticipant(c);
-                    if (other.clerkId === userId) {
-                        // We could update local state here if we had deep structure access
-                        // For now, refetching is safe and consistent
-                    }
-                    return c;
-                }));
+            const handleUserStatus = () => {
                 fetchConversations();
             };
 
-            socket.on('userOnline', handleUserOnline);
+            socket.on('userOnline', handleUserStatus);
+            socket.on('userOffline', handleUserStatus);
 
             return () => {
-                socket.off('userOnline', handleUserOnline);
+                socket.off('userOnline', handleUserStatus);
+                socket.off('userOffline', handleUserStatus);
             };
         }
     }, [user, socket]);
@@ -90,10 +84,15 @@ export function Sidebar({ className, onSelectConversation, selectedId }: Sidebar
                                 )}
                                 onClick={() => onSelectConversation && onSelectConversation(conv._id, otherUser)}
                             >
-                                <Avatar>
-                                    <AvatarImage src={otherUser.image} />
-                                    <AvatarFallback>{otherUser.username?.[0]}</AvatarFallback>
-                                </Avatar>
+                                <div className="relative">
+                                    <Avatar>
+                                        <AvatarImage src={otherUser.image} />
+                                        <AvatarFallback>{otherUser.username?.[0]}</AvatarFallback>
+                                    </Avatar>
+                                    {otherUser.online && (
+                                        <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
+                                    )}
+                                </div>
                                 <div className="flex-1 overflow-hidden">
                                     <p className="font-medium truncate">{otherUser.username || 'User'}</p>
                                     <p className="text-xs text-muted-foreground truncate">
