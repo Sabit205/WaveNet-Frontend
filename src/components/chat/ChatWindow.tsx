@@ -293,7 +293,8 @@ export function ChatWindow({ conversationId, otherUser, onMobileMenuClick }: {
 
             {/* Messages Area */}
             {/* Added pt-16 for header space, removed bottom padding since input is now sibling */}
-            <ScrollArea className="flex-1 w-full bg-slate-50/50">
+            {/* Added min-h-0 to allow flex-1 to shrink properly without overflowing parent */}
+            <ScrollArea className="flex-1 w-full bg-slate-50/50 min-h-0">
                 <div className="space-y-6 max-w-4xl mx-auto px-4 pt-20 pb-4">
                     {/* Date Separator (Mock) */}
                     <div className="flex justify-center mb-6">
@@ -342,7 +343,7 @@ export function ChatWindow({ conversationId, otherUser, onMobileMenuClick }: {
             </ScrollArea>
 
             {/* Input Area - Fixed at bottom via Flexbox (not absolute) */}
-            <div className="p-4 bg-background/80 backdrop-blur-md border-t border-border/50 z-20">
+            <div className="flex-none p-4 bg-background/80 backdrop-blur-md border-t border-border/50 z-20">
                 <div className="max-w-4xl mx-auto bg-white/50 border border-border/60 shadow-sm rounded-full px-2 py-2 flex items-center gap-2 ring-1 ring-black/5 transition-all focus-within:ring-primary/20 focus-within:border-primary/50 focus-within:scale-[1.01]">
                     <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground hover:bg-slate-100 hover:text-primary transition-colors">
                         <Paperclip className="h-5 w-5" />
