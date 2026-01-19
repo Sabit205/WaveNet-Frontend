@@ -10,11 +10,9 @@ export default function Home() {
   const { userId } = useAuth();
   const [selectedConversationId, setSelectedConversationId] = useState<string | undefined>();
 
-  // if (!userId) {
-  //   redirect("/sign-in");
-  // }
-  // Redirect logic should technically be in middleware or server component, 
-  // but for client component we can just show nothing or custom logic.
+  // Middleware handles auth protection
+  // const { userId } = useAuth(); // Optional: if needed for other logic
+
 
   return (
     <div className="flex h-screen items-center justify-center bg-slate-100">
