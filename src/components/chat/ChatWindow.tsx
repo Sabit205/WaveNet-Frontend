@@ -116,7 +116,7 @@ export function ChatWindow({ conversationId, otherUser, onMobileMenuClick }: {
     // Auto-scroll logic
     const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
         if (scrollRef.current) {
-            scrollRef.current.scrollIntoView({ behavior });
+            scrollRef.current.scrollIntoView({ behavior, block: "nearest" });
         }
     };
 

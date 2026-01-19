@@ -50,30 +50,33 @@
 
 :root {
   --radius: 0.75rem;
-  
+
   /* Slate-based light theme with vibrant Blue/Violet accents */
-  --background: oklch(0.985 0.005 240); /* Very light slate */
-  --foreground: oklch(0.13 0.02 240);   /* Dark slate */
-  
+  --background: oklch(0.985 0.005 240);
+  /* Very light slate */
+  --foreground: oklch(0.13 0.02 240);
+  /* Dark slate */
+
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.13 0.02 240);
-  
+
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.13 0.02 240);
-  
+
   /* Premium Primary: Vibrant Blue-Violet Gradient fallback */
-  --primary: oklch(0.45 0.24 280);      /* Deep Vivid Violet */
+  --primary: oklch(0.45 0.24 280);
+  /* Deep Vivid Violet */
   --primary-foreground: oklch(0.985 0 0);
-  
+
   --secondary: oklch(0.96 0.01 240);
   --secondary-foreground: oklch(0.25 0.05 240);
-  
+
   --muted: oklch(0.96 0.01 240);
   --muted-foreground: oklch(0.55 0.04 240);
-  
+
   --accent: oklch(0.94 0.02 240);
   --accent-foreground: oklch(0.20 0.06 240);
-  
+
   --destructive: oklch(0.6 0.2 20);
   --destructive-foreground: oklch(0.985 0 0);
 
@@ -98,27 +101,29 @@
 }
 
 .dark {
-  --background: oklch(0.10 0.01 240); /* Deep dark slate */
+  --background: oklch(0.10 0.01 240);
+  /* Deep dark slate */
   --foreground: oklch(0.985 0.005 240);
-  
+
   --card: oklch(0.13 0.02 240);
   --card-foreground: oklch(0.985 0.005 240);
-  
+
   --popover: oklch(0.13 0.02 240);
   --popover-foreground: oklch(0.985 0.005 240);
-  
-  --primary: oklch(0.65 0.24 280); /* Lighter violet for dark mode */
+
+  --primary: oklch(0.65 0.24 280);
+  /* Lighter violet for dark mode */
   --primary-foreground: oklch(0.10 0.01 240);
-  
+
   --secondary: oklch(0.16 0.03 240);
   --secondary-foreground: oklch(0.985 0.005 240);
-  
+
   --muted: oklch(0.16 0.03 240);
   --muted-foreground: oklch(0.70 0.04 240);
-  
+
   --accent: oklch(0.18 0.04 240);
   --accent-foreground: oklch(0.985 0.005 240);
-  
+
   --destructive: oklch(0.6 0.2 20);
   --destructive-foreground: oklch(0.985 0 0);
 
@@ -140,6 +145,17 @@
   * {
     @apply border-border outline-ring/50;
   }
+
+  html,
+  body {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
     font-feature-settings: "rlig" 1, "calt" 1;
