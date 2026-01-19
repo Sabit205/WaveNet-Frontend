@@ -209,8 +209,8 @@ export function ChatWindow({ conversationId, otherUser, onMobileMenuClick }: {
             </div>
 
             {/* Messages Area - Gradient Background & Bubbles */}
-            <ScrollArea className="flex-1 px-4 pt-20 pb-40 bg-slate-50/50">
-                <div className="space-y-6 max-w-4xl mx-auto">
+            <ScrollArea className="flex-1 bg-slate-50/50">
+                <div className="space-y-6 max-w-4xl mx-auto px-4 pt-24 pb-32">
                     {/* Date Separator (Mock) */}
                     <div className="flex justify-center mb-6">
                         <span className="text-[10px] uppercase font-bold text-muted-foreground/60 bg-slate-100 px-3 py-1 rounded-full tracking-wider">Today</span>
@@ -253,7 +253,7 @@ export function ChatWindow({ conversationId, otherUser, onMobileMenuClick }: {
                             </div>
                         </div>
                     )}
-                    <div ref={scrollRef} className="h-24" /> {/* Spacer */}
+                    <div ref={scrollRef} />
                 </div>
             </ScrollArea>
 
