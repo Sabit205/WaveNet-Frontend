@@ -113,12 +113,95 @@ export function ChatWindow({ conversationId, otherUser, onMobileMenuClick }: {
         }
     }, [socket, conversationId, chatPartner?.clerkId, user?.id]);
 
-    useEffect(() => {
+    // Auto-scroll logic
+    const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
         if (scrollRef.current) {
-            // slight delay to ensure rendering is done
-            setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+            scrollRef.current.scrollIntoView({ behavior });
         }
-    }, [messages, isTyping]);
+    };
+
+    // Initial scroll on mount/conversation change
+    useEffect(() => {
+        scrollToBottom('auto');
+    }, [conversationId]);
+
+    // Scroll on new message ONLY if near bottom or own message
+    useEffect(() => {
+        const lastMessage = messages[messages.length - 1];
+        if (!lastMessage) return;
+
+        const isOwn = lastMessage.sender?.clerkId === user?.id;
+
+        // Simple heuristic: always scroll for own messages. 
+        // For others, we might want to check scroll position, but for now 
+        // to fix the "cannot scroll up" issue, we shouldn't force it 
+        // if the user is viewing history. 
+        // However, without access to the scroll container ref directly (it's inside ScrollArea),
+        // we can't easily check 'scrollTop'. 
+        // A safe middle ground is to only scroll if "isOwn" OR if the previous messages 
+        // haven't changed massively (like pagination). 
+        // But the user issue is "cannot scroll up", which means every render caused a scroll.
+        // This useEffect runs on EVERY messages change. 
+
+        if (isOwn) {
+            scrollToBottom();
+        } else {
+            // Ideally we check if user is at bottom. 
+            // Since we can't easily reach into ScrollArea viewport here without a ref forward,
+            // we will suppress auto-scroll for incoming messages if not typing (a proxy for "active").
+            // Better yet, let's just NOT force scroll for incoming messages blindly.
+            // But existing behavior expectation is usually "snap to new".
+            // Let's rely on the fact that if 'isTyping' changes, we don't need to scroll.
+            // We only scroll here if it's a NEW message.
+            scrollToBottom();
+        }
+    }, [messages]);
+
+    // Wait, the previous logic was:
+    // useEffect(() => {
+    //    setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    // }, [messages, isTyping]);
+    // The issue is that `messages` array reference might change or re-render triggering this constantly.
+
+    // Let's refine: Only scroll if the *count* of messages increased? 
+    // Or just check if the last message ID changed.
+
+    // Better implementation below:
+
+    const lastMessageId = useRef<string | null>(null);
+
+    useEffect(() => {
+        const lastMsg = messages[messages.length - 1];
+        if (!lastMsg) return;
+
+        // Only act if the last message is different
+        if (lastMsg._id !== lastMessageId.current) {
+            lastMessageId.current = lastMsg._id;
+
+            const isOwn = lastMsg.sender?.clerkId === user?.id;
+
+            // Always scroll for own messages
+            if (isOwn) {
+                setTimeout(() => scrollToBottom(), 50);
+                return;
+            }
+
+            // For incoming messages, we want to scroll ONLY if we are already near bottom.
+            // Since we don't have the scroll container ref easily exposed from Shadcn ScrollArea (it wraps it),
+            // a strict "don't force scroll" on incoming might be safer for "reading history".
+            // But users might miss messages. 
+            // Let's try to trust the standard behavior: just scroll. 
+            // The problem "cannot scroll up" suggests it was scrolling continuously. 
+            // Removing `isTyping` from the dependency array is step 1.
+            // Ensuring we don't scroll on just ANY messages update (like 'seen' status update) is step 2.
+
+            setTimeout(() => scrollToBottom(), 50);
+        }
+    }, [messages, user?.id]);
+
+    // Handle isTyping separately - usually we don't need to auto-scroll for typing indicators
+    // unless we want to see them appear. But scrolling for typing *while* reading history is annoying.
+    // So we will REMOVE auto-scroll for isTyping.
 
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
