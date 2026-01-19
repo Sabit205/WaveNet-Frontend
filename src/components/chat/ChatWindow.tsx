@@ -33,17 +33,23 @@ export function ChatWindow({ conversationId }: { conversationId?: string }) {
     }, [conversationId]);
 
     useEffect(() => {
-        if (!socket) return;
+        if (!socket || !conversationId) return;
 
-        socket.on("newMessage", (message: any) => {
+        // Join the conversation room
+        socket.emit("joinConversation", conversationId);
+
+        const handleNewMessage = (message: any) => {
             if (message.conversationId === conversationId) {
                 setMessages((prev) => [...prev, message]);
-                // Scroll to bottom
+                // Scroll to bottom logic would go here
             }
-        });
+        };
+
+        socket.on("newMessage", handleNewMessage);
 
         return () => {
-            socket.off("newMessage");
+            socket.off("newMessage", handleNewMessage);
+            // Optional: leave room if needed, but disconnect handles it
         }
     }, [socket, conversationId]);
 
@@ -51,12 +57,16 @@ export function ChatWindow({ conversationId }: { conversationId?: string }) {
         if (!inputText.trim() || !user || !conversationId) return;
 
         try {
-            await axios.post(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/messages`, {
+            const res = await axios.post(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/messages`, {
                 conversationId,
                 senderId: user.id,
                 content: inputText
             });
             setInputText("");
+            // Optimistic update not strictly needed if socket is fast, 
+            // but we can rely on the socket event coming back.
+            // If we want instant feedback before server ack:
+            // setMessages(prev => [...prev, { ...res.data }]); 
         } catch (error) {
             console.error(error);
         }
