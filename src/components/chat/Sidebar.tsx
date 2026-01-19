@@ -36,15 +36,61 @@ export function Sidebar({ className, onSelectConversation, selectedId }: Sidebar
             socket.emit("setup", user);
 
             const handleUserStatus = () => {
+                // For online status we can just re-fetch or optimistically update
+                // Re-fetching is safer for now to get fresh data
                 fetchConversations();
+            };
+
+            const handleNewMessage = (message: any) => {
+                setConversations(prev => {
+                    // Update the specific conversation's lastMessage
+                    const updated = prev.map(conv => {
+                        if (conv._id === message.conversationId) {
+                            return {
+                                ...conv,
+                                lastMessage: message,
+                                updatedAt: message.createdAt // Update sort order
+                            };
+                        }
+                        return conv;
+                    });
+                    // Re-sort by updatedAt descending
+                    return updated.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+                });
+            };
+
+            // This basic handler might need backend to send more data about WHO saw WHAT
+            // But for sidebar preview, just knowing *it was seen* might be enough to update local state if we had it.
+            // Since we rely on 'fetchConversations' for complex population, we might just re-fetch on 'messagesSeen' 
+            // OR optimistically update if we know the conversationId.
+            const handleMessagesSeen = (data: any) => {
+                setConversations(prev => prev.map(conv => {
+                    if (conv._id === data.conversationId) {
+                        // Mark last message as seen optimistically
+                        if (conv.lastMessage) {
+                            return {
+                                ...conv,
+                                lastMessage: {
+                                    ...conv.lastMessage,
+                                    seen: true // Simple flag update
+                                }
+                            }
+                        }
+                    }
+                    return conv;
+                }));
             };
 
             socket.on('userOnline', handleUserStatus);
             socket.on('userOffline', handleUserStatus);
+            socket.on('newMessage', handleNewMessage);
+            socket.on('messagesSeen', handleMessagesSeen);
 
             return () => {
                 socket.off('userOnline', handleUserStatus);
                 socket.off('userOffline', handleUserStatus);
+                socket.off('newMessage', handleNewMessage);
+                socket.off('messagesSeen', handleMessagesSeen);
             };
         }
     }, [user, socket]);
@@ -90,6 +136,8 @@ export function Sidebar({ className, onSelectConversation, selectedId }: Sidebar
                     {conversations.map(conv => {
                         const otherUser = getOtherParticipant(conv);
                         const isSelected = selectedId === conv._id;
+                        const lastMsg = conv.lastMessage;
+                        const isOwnLastMsg = lastMsg?.sender?.clerkId === user?.id;
 
                         return (
                             <div
@@ -123,15 +171,25 @@ export function Sidebar({ className, onSelectConversation, selectedId }: Sidebar
                                             {otherUser.username || 'User'}
                                         </p>
                                         <span className="text-[10px] text-muted-foreground/60 tabular-nums">
-                                            {/* Could add time here if available in conv summary */}
+                                            {lastMsg?.createdAt && new Date(lastMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </span>
                                     </div>
-                                    <p className={cn(
-                                        "text-xs truncate transition-colors",
-                                        isSelected ? "text-primary/70 font-medium" : "text-muted-foreground"
-                                    )}>
-                                        {conv.lastMessage?.content || 'Started a conversation'}
-                                    </p>
+                                    <div className="flex items-center gap-1">
+                                        {isOwnLastMsg && (
+                                            <span className={cn(
+                                                "text-[10px]",
+                                                (lastMsg?.seenBy?.length > 0 || lastMsg?.seen) ? "text-blue-500" : "text-muted-foreground"
+                                            )}>
+                                                {(lastMsg?.seenBy?.length > 0 || lastMsg?.seen) ? "✓✓" : "✓"}
+                                            </span>
+                                        )}
+                                        <p className={cn(
+                                            "text-xs truncate transition-colors flex-1",
+                                            isSelected ? "text-primary/70 font-medium" : "text-muted-foreground"
+                                        )}>
+                                            {lastMsg?.content || 'Started a conversation'}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         );
