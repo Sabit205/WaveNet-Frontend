@@ -18,26 +18,36 @@ export function ChatWindow({ conversationId, otherUser }: { conversationId?: str
     const { user } = useUser();
     const scrollRef = useRef<HTMLDivElement>(null);
 
+    const [chatPartner, setChatPartner] = useState<any>(otherUser);
+
     useEffect(() => {
         if (conversationId) {
-            const fetchMessages = async () => {
+            const fetchData = async () => {
                 try {
-                    const res = await axios.get(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/messages/${conversationId}`);
-                    setMessages(res.data);
+                    // Fetch messages
+                    const msgsRes = await axios.get(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/messages/${conversationId}`);
+                    setMessages(msgsRes.data);
+
+                    // Fetch conversation details for robust header info
+                    const convRes = await axios.get(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/conversations/detail/${conversationId}`);
+                    const partner = convRes.data.participants.find((p: any) => p.clerkId !== user?.id);
+                    if (partner) {
+                        setChatPartner(partner);
+                    }
                 } catch (error) {
                     console.error(error);
                 }
             };
-            fetchMessages();
+            fetchData();
         }
-    }, [conversationId]);
+    }, [conversationId, user]);
 
     useEffect(() => {
-        // Auto-scroll to bottom on new messages
-        if (scrollRef.current) {
-            scrollRef.current.scrollIntoView({ behavior: 'smooth' });
+        // Update local state if prop changes (initially)
+        if (otherUser && !chatPartner) {
+            setChatPartner(otherUser);
         }
-    }, [messages]);
+    }, [otherUser]);
 
     useEffect(() => {
         if (!socket || !conversationId) return;
@@ -51,13 +61,28 @@ export function ChatWindow({ conversationId, otherUser }: { conversationId?: str
             }
         };
 
+        const handleUserStatus = (userId: string) => {
+            if (chatPartner?.clerkId === userId) {
+                setChatPartner((prev: any) => ({ ...prev, online: true }));
+            }
+        };
+
+        const handleUserOffline = (userId: string) => {
+            if (chatPartner?.clerkId === userId) {
+                setChatPartner((prev: any) => ({ ...prev, online: false }));
+            }
+        };
+
         socket.on("newMessage", handleNewMessage);
+        socket.on("userOnline", handleUserStatus);
+        socket.on("userOffline", handleUserOffline);
 
         return () => {
             socket.off("newMessage", handleNewMessage);
-            // Optional: leave room if needed, but disconnect handles it
+            socket.off("userOnline", handleUserStatus);
+            socket.off("userOffline", handleUserOffline);
         }
-    }, [socket, conversationId]);
+    }, [socket, conversationId, chatPartner?.clerkId]);
 
     const handleSend = async () => {
         if (!inputText.trim() || !user || !conversationId) return;
@@ -91,12 +116,12 @@ export function ChatWindow({ conversationId, otherUser }: { conversationId?: str
             {/* Header */}
             <div className="p-4 border-b flex items-center gap-3">
                 <Avatar>
-                    <AvatarImage src={otherUser?.image} />
-                    <AvatarFallback>{otherUser?.username?.[0] || 'U'}</AvatarFallback>
+                    <AvatarImage src={chatPartner?.image} />
+                    <AvatarFallback>{chatPartner?.username?.[0] || 'U'}</AvatarFallback>
                 </Avatar>
                 <div>
-                    <p className="font-bold">{otherUser?.username || 'User'}</p>
-                    <p className="text-xs text-green-500">{otherUser?.online ? 'Online' : 'Offline'}</p>
+                    <p className="font-bold">{chatPartner?.username || 'User'}</p>
+                    <p className="text-xs text-green-500">{chatPartner?.online ? 'Online' : 'Offline'}</p>
                 </div>
             </div>
 
